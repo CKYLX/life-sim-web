@@ -235,7 +235,7 @@
 
   <div class="stats" id="statsBox"></div>
 
-  <div class="section-title">🕹️ 每天选择一个行动（每个行动长大 1 岁）</div>
+  <div class="section-title">🕹️ 36 个行动长大 1 岁 · 精力每分钟恢复 10 点</div>
   <div class="actions" id="actionsBox"></div>
 
   <div class="tabs">
@@ -288,15 +288,17 @@ const REL_TYPES = {
 
 const MAX_AGE = 100;
 const MAX_CHAT = 200;
+const ACTIONS_PER_YEAR = 36;   // 36 个行动长大 1 岁
+const ENERGY_PER_MIN = 10;     // 每 1 分钟恢复 10 点精力
 
 const ACTIONS = [
-  { key: 'study',    name: '学习', emoji: '📚', desc: '读书学习，提升智力' },
-  { key: 'work',     name: '工作', emoji: '💼', desc: '上班工作，赚取收入' },
-  { key: 'exercise', name: '运动', emoji: '🏃', desc: '锻炼身体，增强体质' },
-  { key: 'rest',     name: '休息', emoji: '😴', desc: '好好休息，恢复精力' },
-  { key: 'play',     name: '娱乐', emoji: '🎮', desc: '放松玩乐，提升快乐' },
-  { key: 'social',   name: '社交', emoji: '💬', desc: '结识朋友，提升魅力' },
-  { key: 'parttime', name: '打工', emoji: '🧹', desc: '兼职打工，赚零花钱' },
+  { key: 'study',    name: '学习', emoji: '📚', desc: '提升智力' },
+  { key: 'work',     name: '工作', emoji: '💼', desc: '18岁+，赚100金币' },
+  { key: 'exercise', name: '运动', emoji: '🏃', desc: '增强体质' },
+  { key: 'rest',     name: '休息', emoji: '😴', desc: '退出游戏，精力随时间恢复' },
+  { key: 'play',     name: '娱乐', emoji: '🎮', desc: '花100金币，快乐+10' },
+  { key: 'social',   name: '社交', emoji: '💬', desc: '花100金币，魅力+10' },
+  { key: 'parttime', name: '打工', emoji: '🧹', desc: '16岁+，赚50金币' },
 ];
 
 const ACTIONS_MAP = {};
@@ -340,6 +342,8 @@ function newPlayer(world, username, gender, passwordHash) {
     name: name,
     gender: gender === 'female' ? 'female' : 'male',
     age: 0,
+    actionCount: 0,
+    energyAt: Date.now(),
     money: 1000,
     stats: { intel: 30, health: 60, happy: 60, charm: 30, energy: 100 },
     alive: true,
@@ -356,6 +360,17 @@ function addLog(p, text) {
 }
 
 function lifeStageText(age) { return getStage(age).name; }
+
+// 精力随时间恢复：每 1 分钟 +10 点
+function liveEnergy(p) {
+  const base = p.energyAt || p.createdAt || Date.now();
+  const elapsedMin = Math.floor((Date.now() - base) / 60000);
+  return clamp((p.stats.energy || 0) + elapsedMin * ENERGY_PER_MIN, 0, 100);
+}
+function settleEnergy(p) {
+  p.stats.energy = liveEnergy(p);
+  p.energyAt = Date.now();
+}
 
 function milestoneEvents(p, oldAge, newAge) {
   const ms = [
@@ -378,76 +393,75 @@ function applyAction(p, key) {
   if (!p.alive) return { ok: false, msg: '已故，无法行动' };
 
   const s = p.stats;
-  const stage = getStage(p.age);
-  const before = { ...s };
   const oldAge = p.age;
+  const before = { ...s };
   let energyCost = 0;
   const changes = [];
+
+  // 结算精力恢复（基于上次行动以来的时间）
+  settleEnergy(p);
 
   switch (key) {
     case 'study': {
       energyCost = 25;
-      const bonus = (stage.name === '小学' || stage.name === '初中' || stage.name === '高中') ? 5 : 0;
-      s.intel = clamp(s.intel + 10 + bonus, 0, 100);
-      s.happy = clamp(s.happy - 3, 0, 100);
+      s.intel = clamp(s.intel + 10, 0, 100);
       changes.push('智力+' + (s.intel - before.intel));
       break;
     }
     case 'work': {
       energyCost = 30;
-      if (p.age < 18) { addLog(p, '未成年还不能正式工作，试试「打工」或「学习」'); return { ok: false, msg: '未成年不能工作，试试「打工」或「学习」' }; }
-      const earn = Math.round(80 + s.intel * 2.5 + (stage.name === '职场' ? 50 : 0));
-      p.money += earn;
-      s.intel = clamp(s.intel + 2, 0, 100);
-      changes.push('收入 +¥' + earn);
+      if (p.age < 18) { addLog(p, '需年满 18 岁才能工作，先「学习」或「打工」吧'); return { ok: false, msg: '需年满 18 岁才能工作' }; }
+      p.money += 100;
+      changes.push('收入 +¥100');
       break;
     }
     case 'exercise':
       energyCost = 25;
       s.health = clamp(s.health + 8, 0, 100);
-      s.charm = clamp(s.charm + 3, 0, 100);
+      s.charm = clamp(s.charm + 2, 0, 100);
       changes.push('健康+' + (s.health - before.health), '魅力+' + (s.charm - before.charm));
       break;
     case 'rest':
-      s.energy = clamp(s.energy + 45, 0, 100);
-      s.health = clamp(s.health + 4, 0, 100);
-      changes.push('精力+45', '健康+4');
-      break;
+      // 休息 = 退出游戏，精力随时间恢复（不消耗精力、不成长年龄）
+      return { ok: true, exit: true, msg: '😴 已退出游戏，精力会随时间恢复（每分钟+10点）' };
     case 'play':
       energyCost = 15;
-      if (p.money < 50) { addLog(p, '钱不够，娱乐要花 50 元'); return { ok: false, msg: '娱乐需要 50 元，先去赚点钱吧' }; }
-      p.money -= 50;
-      s.happy = clamp(s.happy + 12, 0, 100);
-      changes.push('快乐+' + (s.happy - before.happy));
+      if (p.money < 100) { addLog(p, '金币不够，娱乐要花 100 金币'); return { ok: false, msg: '娱乐需要 100 金币，先去「打工」或「工作」赚金币吧' }; }
+      p.money -= 100;
+      s.happy = clamp(s.happy + 10, 0, 100);
+      changes.push('快乐+' + (s.happy - before.happy) + '（-¥100）');
       break;
     case 'social':
       energyCost = 15;
-      s.happy = clamp(s.happy + 6, 0, 100);
-      s.charm = clamp(s.charm + 5, 0, 100);
-      changes.push('快乐+' + (s.happy - before.happy), '魅力+' + (s.charm - before.charm));
+      if (p.money < 100) { addLog(p, '金币不够，社交要花 100 金币'); return { ok: false, msg: '社交需要 100 金币，先去「打工」或「工作」赚金币吧' }; }
+      p.money -= 100;
+      s.charm = clamp(s.charm + 10, 0, 100);
+      changes.push('魅力+' + (s.charm - before.charm) + '（-¥100）');
       break;
     case 'parttime':
       energyCost = 20;
-      if (p.age >= 18) { addLog(p, '已成年，直接「工作」赚更多'); return { ok: false, msg: '已成年，请用「工作」' }; }
-      const earn2 = Math.round(30 + s.intel * 0.8);
-      p.money += earn2;
-      changes.push('零花钱 +¥' + earn2);
+      if (p.age < 16) { addLog(p, '需年满 16 岁才能打工，先「学习」吧'); return { ok: false, msg: '需年满 16 岁才能打工' }; }
+      p.money += 50;
+      changes.push('零花钱 +¥50');
       break;
   }
 
   if (energyCost > 0) {
     if (s.energy < energyCost) {
-      addLog(p, '精力不足，先去「休息」恢复一下 😴');
-      return { ok: false, msg: '精力不足（' + s.energy + '/100），请先「休息」' };
+      addLog(p, '精力不足，休息一会儿再行动吧 😴');
+      return { ok: false, msg: '精力不足（' + s.energy + '/100），休息或等几分钟再行动' };
     }
     s.energy = clamp(s.energy - energyCost, 0, 100);
   }
 
-  p.age = clamp(p.age + 1, 0, MAX_AGE);
+  // 年龄：36 个行动长大 1 岁
+  p.actionCount = (p.actionCount || 0) + 1;
+  const newAge = Math.floor(p.actionCount / ACTIONS_PER_YEAR);
+  p.age = clamp(newAge, 0, MAX_AGE);
 
   let eventText = '';
   const rand = Math.random();
-  if (rand < 0.04) { p.money += 500; eventText = '🍀 意外之财 +¥500！'; }
+  if (rand < 0.04) { p.money += 100; eventText = '🍀 意外之财 +¥100！'; }
   else if (rand < 0.08) { s.health = clamp(s.health - 10, 0, 100); eventText = '🤒 不小心生病了，健康-10'; }
   else if (rand < 0.12) { s.happy = clamp(s.happy + 8, 0, 100); eventText = '🎉 遇到开心事，快乐+8'; }
   if (eventText) addLog(p, eventText);
@@ -461,7 +475,11 @@ function applyAction(p, key) {
 
   p.lastActive = Date.now();
 
-  const msg = act.emoji + ' ' + act.name + '：' + (changes.length ? changes.join('，') : '无变化') + '，年龄 ' + oldAge + ' → ' + p.age + ' 岁';
+  const progress = p.actionCount % ACTIONS_PER_YEAR;
+  const grew = oldAge !== p.age;
+  const msg = act.emoji + ' ' + act.name + '：' + (changes.length ? changes.join('，') : '无变化') +
+    '，本岁行动 ' + (progress === 0 ? ACTIONS_PER_YEAR : progress) + '/' + ACTIONS_PER_YEAR +
+    (grew ? '，长大到 ' + p.age + ' 岁 🎂' : '');
   return { ok: true, msg, eventText };
 }
 
@@ -469,7 +487,7 @@ function publicPlayer(p) {
   return {
     id: p.id, name: p.name, gender: p.gender, age: p.age,
     stage: lifeStageText(p.age), alive: p.alive, money: p.money,
-    stats: p.stats, lastActive: p.lastActive,
+    stats: p.stats, lastActive: p.lastActive, actionCount: p.actionCount || 0,
   };
 }
 
@@ -644,15 +662,32 @@ async function tryAutoLogin() {
   } catch (e) {}
 }
 
+let timers = [];
 function enterGame() {
+  clearTimers();
   $('login').classList.add('hidden');
   $('game').classList.remove('hidden');
   refreshMe();
   refreshWorld();
   refreshChat();
-  setInterval(refreshMe, 3000);
-  setInterval(refreshWorld, 5000);
-  setInterval(refreshChat, 2500);
+  timers.push(setInterval(refreshMe, 3000));
+  timers.push(setInterval(refreshWorld, 5000));
+  timers.push(setInterval(refreshChat, 2500));
+}
+function clearTimers() {
+  timers.forEach(clearInterval);
+  timers = [];
+}
+function logout() {
+  clearTimers();
+  myId = null;
+  localStorage.removeItem('lifeSimPlayerId');
+  me = null;
+  chatLoaded = false;
+  chatLast = 0;
+  $('game').classList.add('hidden');
+  $('login').classList.remove('hidden');
+  refreshWorld();
 }
 
 // ---------- 头像 ----------
@@ -678,13 +713,15 @@ function renderMe(d) {
   if (!me) return;
   $('avatar').textContent = avatarEmoji(me.gender, me.age);
   $('myName').textContent = me.name;
-  $('mySub').textContent = me.age + '岁 · ' + me.stage + ' · ' + (me.gender === 'female' ? '女' : '男');
+  const prog = (me.actionCount || 0) % ACTIONS_PER_YEAR;
+  $('mySub').textContent = me.age + '岁 · ' + me.stage + ' · ' + (me.gender === 'female' ? '女' : '男') + ' · 行动 ' + prog + '/' + ACTIONS_PER_YEAR;
   $('myMoney').textContent = '¥' + me.money.toLocaleString();
   $('deadBanner').classList.toggle('hidden', me.alive !== false);
 
   let html = '';
   for (const s of STAT_DEFS) {
-    const v = me.stats[s.key] || 0;
+    let v = me.stats[s.key] || 0;
+    if (s.key === 'energy' && d.liveEnergy != null) v = d.liveEnergy;
     html += '<div class="stat-row"><span class="s-label">' + s.label + '</span>' +
       '<div class="bar"><div class="fill" style="width:' + v + '%;background:' + s.color + '"></div></div>' +
       '<span class="s-val">' + v + '</span></div>';
@@ -762,7 +799,7 @@ async function refreshMe() {
     const incoming = world.requests
       .filter((r) => r.to === myId && r.status === 'pending')
       .map((r) => ({ id: r.id, from: r.from, fromName: (getPlayer(world, r.from) || {}).name || '未知', type: r.type, typeName: REL_TYPES[r.type].name, typeEmoji: REL_TYPES[r.type].emoji }));
-    renderMe({ player: publicPlayer(p), log: p.log.slice(0, 20), relations: myRelations(world, myId), incoming });
+    renderMe({ player: publicPlayer(p), liveEnergy: liveEnergy(p), log: p.log.slice(0, 20), relations: myRelations(world, myId), incoming });
   } catch (e) {}
 }
 
@@ -785,11 +822,16 @@ async function doAction(key) {
       if (!p) return { ok: false, msg: '角色不存在' };
       const r = applyAction(p, key);
       if (r.ok) await saveWorld(world);
-      return { ok: r.ok, msg: r.msg, eventText: r.eventText, player: publicPlayer(p), log: p.log.slice(0, 20) };
+      return { ok: r.ok, exit: r.exit, msg: r.msg, eventText: r.eventText, player: publicPlayer(p), liveEnergy: liveEnergy(p), log: p.log.slice(0, 20) };
     });
+    if (d.exit) {
+      toast(d.msg);
+      logout();
+      return;
+    }
     if (d.ok) {
       toast(d.eventText || d.msg);
-      renderMe({ player: d.player, log: d.log, relations: me ? me.relations : [], incoming: [] });
+      renderMe({ player: d.player, liveEnergy: d.liveEnergy, log: d.log, relations: me ? me.relations : [], incoming: [] });
       refreshWorld();
     } else {
       toast(d.msg || '操作失败');
