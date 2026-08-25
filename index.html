@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>联机模拟人生 · Online Life Sim</title>
+<style>
+  :root {
+    --bg1: #1a1a2e;
+    --bg2: #16213e;
+    --card: rgba(255,255,255,0.06);
+    --card2: rgba(255,255,255,0.10);
+    --border: rgba(255,255,255,0.12);
+    --text: #eaeaf2;
+    --dim: #9a9ab0;
+    --accent: #ff6b9d;
+    --accent2: #ffa751;
+    --green: #4ade80;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --yellow: #fbbf24;
+    --red: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, var(--bg1), var(--bg2));
+    color: var(--text);
+    min-height: 100vh;
+    padding-bottom: 30px;
+    background-attachment: fixed;
+  }
+  .hidden { display: none !important; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 14px; }
+
+  /* ---------- 登录页 ---------- */
+  #login { max-width: 460px; margin: 0 auto; padding: 20px; }
+  .logo { text-align: center; margin: 40px 0 30px; }
+  .logo .emoji { font-size: 64px; display: block; animation: float 3s ease-in-out infinite; }
+  .logo h1 { font-size: 28px; margin-top: 10px; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo p { color: var(--dim); margin-top: 6px; font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; backdrop-filter: blur(8px); }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; color: var(--dim); margin-bottom: 8px; }
+  .field input[type=text] {
+    width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--border);
+    background: rgba(0,0,0,0.3); color: var(--text); font-size: 16px; outline: none;
+  }
+  .field input[type=text]:focus { border-color: var(--accent); }
+  .gender-row { display: flex; gap: 10px; }
+  .gender-btn {
+    flex: 1; padding: 14px; border-radius: 12px; border: 1px solid var(--border);
+    background: rgba(0,0,0,0.25); color: var(--text); font-size: 16px; cursor: pointer; text-align: center; transition: all .15s;
+  }
+  .gender-btn .g-emoji { display: block; font-size: 28px; margin-bottom: 4px; }
+  .gender-btn.on { border-color: var(--accent); background: rgba(255,107,157,0.15); }
+  .btn {
+    width: 100%; padding: 15px; border: none; border-radius: 12px; font-size: 17px; font-weight: 600;
+    cursor: pointer; color: #fff; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: transform .1s, opacity .15s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: .5; }
+
+  /* ---------- 游戏页 ---------- */
+  .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .avatar { font-size: 52px; line-height: 1; filter: drop-shadow(0 4px 8px rgba(0,0,0,.4)); animation: float 3s ease-in-out infinite; }
+  .me-info { flex: 1; }
+  .me-info .name { font-size: 20px; font-weight: 700; }
+  .me-info .sub { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .money-badge { background: rgba(251,191,36,.15); border: 1px solid rgba(251,191,36,.4); color: var(--yellow); padding: 6px 12px; border-radius: 20px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+
+  .stats { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; margin-bottom: 14px; }
+  .stat-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .stat-row .s-label { width: 44px; font-size: 13px; color: var(--dim); text-align: right; }
+  .stat-row .bar { flex: 1; height: 14px; background: rgba(0,0,0,.3); border-radius: 8px; overflow: hidden; }
+  .stat-row .fill { height: 100%; border-radius: 8px; transition: width .5s ease; }
+  .stat-row .s-val { width: 34px; font-size: 12px; color: var(--dim); text-align: left; }
+
+  .section-title { font-size: 13px; color: var(--dim); margin: 4px 0 10px; letter-spacing: 1px; }
+  .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .act-btn {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 6px;
+    cursor: pointer; text-align: center; transition: all .15s; color: var(--text);
+  }
+  .act-btn:active { transform: scale(0.94); border-color: var(--accent); }
+  .act-btn .a-emoji { font-size: 30px; display: block; margin-bottom: 6px; }
+  .act-btn .a-name { font-size: 14px; font-weight: 600; }
+  .act-btn .a-desc { font-size: 10px; color: var(--dim); margin-top: 3px; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab { flex: 1; padding: 11px; text-align: center; border-radius: 10px; background: var(--card); border: 1px solid var(--border); cursor: pointer; font-size: 14px; color: var(--dim); transition: all .15s; }
+  .tab.on { background: rgba(255,107,157,.15); border-color: var(--accent); color: var(--text); font-weight: 600; }
+  .tab .badge { display: inline-block; background: var(--red); color: #fff; border-radius: 10px; font-size: 11px; padding: 1px 7px; margin-left: 4px; }
+
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 12px; min-height: 120px; }
+  .log-item { padding: 9px 4px; border-bottom: 1px solid rgba(255,255,255,.05); font-size: 13px; line-height: 1.5; }
+  .log-item .time { color: var(--dim); font-size: 11px; margin-right: 6px; }
+
+  .player-item { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .player-item:last-child { border-bottom: none; }
+  .p-avatar { font-size: 30px; }
+  .p-info { flex: 1; }
+  .p-info .p-name { font-size: 15px; font-weight: 600; }
+  .p-info .p-sub { font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .p-actions { display: flex; gap: 6px; }
+  .mini-btn { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,.25); color: var(--text); font-size: 12px; cursor: pointer; }
+  .mini-btn.on { border-color: var(--accent); background: rgba(255,107,157,.15); }
+  .mini-btn.accept { border-color: var(--green); color: var(--green); }
+  .mini-btn.decline { border-color: var(--red); color: var(--red); }
+
+  .rel-item { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .rel-item:last-child { border-bottom: none; }
+  .rel-emoji { font-size: 26px; }
+
+  .empty { text-align: center; color: var(--dim); padding: 24px 10px; font-size: 14px; }
+
+  /* ---------- 聊天室 ---------- */
+  #panelChat { display: flex; flex-direction: column; }
+  .chat-box { flex: 1; height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
+  .chat-msg { display: flex; flex-direction: column; align-items: flex-start; }
+  .chat-msg.mine { align-items: flex-end; }
+  .chat-msg .m-head { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+  .chat-msg .m-head .m-name { font-weight: 600; color: var(--accent2); }
+  .chat-msg.mine .m-head .m-name { color: var(--accent); }
+  .chat-msg .m-bubble { display: inline-block; max-width: 80%; background: rgba(0,0,0,.32); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 1.45; word-break: break-word; }
+  .chat-msg.mine .m-bubble { background: rgba(255,107,157,.18); border-color: rgba(255,107,157,.35); }
+  .chat-msg .m-time { font-size: 10px; color: var(--dim); margin-top: 3px; }
+  .chat-sys { text-align: center; font-size: 11px; color: var(--dim); padding: 4px; }
+  .chat-input-row { display: flex; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .chat-input-row input { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(0,0,0,.3); color: var(--text); font-size: 15px; outline: none; }
+  .chat-input-row input:focus { border-color: var(--accent); }
+  .chat-input-row .send-btn { padding: 0 18px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; color: #fff; background: linear-gradient(90deg, var(--accent), var(--accent2)); cursor: pointer; }
+  .chat-input-row .send-btn:active { transform: scale(0.95); }
+  .chat-input-row .send-btn:disabled { opacity: .5; }
+
+  #toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px); background: rgba(0,0,0,.85); color: #fff; padding: 12px 20px; border-radius: 12px; font-size: 14px; opacity: 0; pointer-events: none; transition: all .3s; max-width: 88%; text-align: center; z-index: 99; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .dead-banner { background: rgba(248,113,113,.15); border: 1px solid var(--red); color: var(--red); border-radius: 12px; padding: 12px; text-align: center; margin-bottom: 14px; font-size: 14px; }
+
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  @media (max-width: 420px) {
+    .actions { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .act-btn .a-emoji { font-size: 26px; }
+    .act-btn .a-name { font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 登录页 -->
+<div id="login" class="wrap">
+  <div class="logo">
+    <span class="emoji">🌍</span>
+    <h1>联机模拟人生</h1>
+    <p>所有角色都是真人玩家 · 上学 · 工作 · 结缘</p>
+  </div>
+  <div class="card">
+    <div class="field">
+      <label>给自己起个名字</label>
+      <input type="text" id="nameInput" placeholder="输入名字（最多12字）" maxlength="12">
+    </div>
+    <div class="field">
+      <label>选择性别</label>
+      <div class="gender-row">
+        <div class="gender-btn on" id="gMale" onclick="setGender('male')">
+          <span class="g-emoji">👦</span>男
+        </div>
+        <div class="gender-btn" id="gFemale" onclick="setGender('female')">
+          <span class="g-emoji">👧</span>女
+        </div>
+      </div>
+    </div>
+    <button class="btn" id="enterBtn" onclick="register()">🌱 进入世界</button>
+  </div>
+  <div style="text-align:center;margin-top:14px;color:var(--dim);font-size:12px;" id="worldCount"></div>
+</div>
+
+<!-- 游戏页 -->
+<div id="game" class="wrap hidden">
+  <div class="topbar">
+    <div class="avatar" id="avatar">👶</div>
+    <div class="me-info">
+      <div class="name" id="myName">玩家</div>
+      <div class="sub" id="mySub">0岁 · 婴儿</div>
+    </div>
+    <div class="money-badge" id="myMoney">¥1000</div>
+  </div>
+
+  <div class="dead-banner hidden" id="deadBanner">🌟 你已走完这一生。刷新页面可重新投胎开始新的人生。</div>
+
+  <div class="stats" id="statsBox"></div>
+
+  <div class="section-title">🕹️ 每天选择一个行动（每个行动长大 1 岁）</div>
+  <div class="actions" id="actionsBox"></div>
+
+  <div class="tabs">
+    <div class="tab on" onclick="switchTab('log', this)">📜 日志</div>
+    <div class="tab" onclick="switchTab('world', this)">🌍 世界<span class="badge hidden" id="worldBadge"></span></div>
+    <div class="tab" onclick="switchTab('rel', this)">💞 结缘<span class="badge hidden" id="relBadge"></span></div>
+    <div class="tab" onclick="switchTab('chat', this)">💬 聊天</div>
+  </div>
+
+  <div class="panel" id="panelLog"></div>
+  <div class="panel hidden" id="panelWorld"></div>
+  <div class="panel hidden" id="panelRel"></div>
+  <div class="panel hidden" id="panelChat">
+    <div class="chat-box" id="chatBox"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="和世界里的大家聊聊吧…" maxlength="200" onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="send-btn" id="chatSendBtn" onclick="sendChat()">发送</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ---------- 全局状态 ----------
+const API = 'https://life-sim-online-yxrryxggwd.cn-hangzhou.fcapp.run'; // 数据接口指向阿里云函数
+let myId = localStorage.getItem('lifeSimPlayerId') || null;
+let gender = 'male';
+let currentTab = 'log';
+let me = null;
+let worldList = [];
+let chatLast = 0;
+let chatLoaded = false;
+
+// ---------- 工具 ----------
+function $(id) { return document.getElementById(id); }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+async function api(url, opts) {
+  const r = await fetch(API + url, opts);
+  return r.json();
+}
+
+// ---------- 登录 ----------
+function setGender(g) {
+  gender = g;
+  $('gMale').classList.toggle('on', g === 'male');
+  $('gFemale').classList.toggle('on', g === 'female');
+}
+
+async function register() {
+  const name = $('nameInput').value.trim();
+  if (!name) { toast('先给自己起个名字吧'); return; }
+  $('enterBtn').disabled = true;
+  try {
+    const d = await api('/api/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, gender })
+    });
+    if (d.ok) {
+      myId = d.player.id;
+      localStorage.setItem('lifeSimPlayerId', myId);
+      enterGame();
+    } else { toast(d.msg || '注册失败'); }
+  } catch (e) { toast('网络错误，请重试'); }
+  $('enterBtn').disabled = false;
+}
+
+function enterGame() {
+  $('login').classList.add('hidden');
+  $('game').classList.remove('hidden');
+  refreshMe();
+  refreshWorld();
+  refreshChat();
+  setInterval(refreshMe, 3000);
+  setInterval(refreshWorld, 5000);
+  setInterval(refreshChat, 2500);
+}
+
+// ---------- 头像 ----------
+function avatarEmoji(g, age) {
+  if (age < 3) return '👶';
+  if (age < 12) return g === 'female' ? '👧' : '🧒';
+  if (age < 18) return g === 'female' ? '👧' : '🧑';
+  if (age < 60) return g === 'female' ? '👩' : '👨';
+  return g === 'female' ? '👵' : '👴';
+}
+
+// ---------- 渲染 ----------
+const STAT_DEFS = [
+  { key: 'intel', label: '智力', color: 'var(--blue)' },
+  { key: 'health', label: '健康', color: 'var(--green)' },
+  { key: 'happy', label: '快乐', color: 'var(--accent)' },
+  { key: 'charm', label: '魅力', color: 'var(--purple)' },
+  { key: 'energy', label: '精力', color: 'var(--yellow)' },
+];
+
+const ACTIONS = [
+  { key: 'study', emoji: '📚', name: '学习', desc: '提升智力' },
+  { key: 'work', emoji: '💼', name: '工作', desc: '赚取收入' },
+  { key: 'exercise', emoji: '🏃', name: '运动', desc: '增强体质' },
+  { key: 'rest', emoji: '😴', name: '休息', desc: '恢复精力' },
+  { key: 'play', emoji: '🎮', name: '娱乐', desc: '提升快乐' },
+  { key: 'social', emoji: '💬', name: '社交', desc: '提升魅力' },
+  { key: 'parttime', emoji: '🧹', name: '打工', desc: '赚零花钱' },
+];
+
+function renderMe(d) {
+  me = d.player;
+  if (!me) return;
+  $('avatar').textContent = avatarEmoji(me.gender, me.age);
+  $('myName').textContent = me.name;
+  $('mySub').textContent = me.age + '岁 · ' + me.stage + ' · ' + (me.gender === 'female' ? '女' : '男');
+  $('myMoney').textContent = '¥' + me.money.toLocaleString();
+  $('deadBanner').classList.toggle('hidden', me.alive !== false);
+
+  let html = '';
+  for (const s of STAT_DEFS) {
+    const v = me.stats[s.key] || 0;
+    html += '<div class="stat-row"><span class="s-label">' + s.label + '</span>' +
+      '<div class="bar"><div class="fill" style="width:' + v + '%;background:' + s.color + '"></div></div>' +
+      '<span class="s-val">' + v + '</span></div>';
+  }
+  $('statsBox').innerHTML = html;
+
+  // 日志
+  if (currentTab === 'log') renderLog(d.log || []);
+  // 结缘
+  renderRel(d.relations || [], d.incoming || []);
+  $('relBadge').classList.toggle('hidden', !(d.incoming || []).length);
+  $('relBadge').textContent = (d.incoming || []).length;
+}
+
+function renderLog(log) {
+  if (!log.length) { $('panelLog').innerHTML = '<div class="empty">还没有动态，去行动吧～</div>'; return; }
+  let html = '';
+  for (const l of log) {
+    const t = new Date(l.t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    html += '<div class="log-item"><span class="time">' + t + '</span>' + esc(l.text) + '</div>';
+  }
+  $('panelLog').innerHTML = html;
+}
+
+function renderWorld() {
+  $('worldBadge').classList.toggle('hidden', !worldList.length);
+  $('worldBadge').textContent = worldList.length;
+  if (currentTab !== 'world') return;
+  if (!worldList.length) { $('panelWorld').innerHTML = '<div class="empty">世界还很安静，快邀请朋友一起玩吧～</div>'; return; }
+  let html = '';
+  for (const p of worldList) {
+    const isMe = p.id === myId;
+    html += '<div class="player-item">' +
+      '<div class="p-avatar">' + avatarEmoji(p.gender, p.age) + '</div>' +
+      '<div class="p-info"><div class="p-name">' + esc(p.name) + (isMe ? '（我）' : '') + '</div>' +
+      '<div class="p-sub">' + p.age + '岁 · ' + p.stage + ' · ' + (p.gender === 'female' ? '女' : '男') + (p.alive === false ? ' · 已故' : '') + '</div></div>' +
+      (isMe ? '' : '<div class="p-actions">' +
+        '<button class="mini-btn" onclick="sendRelation(\'' + p.id + '\',\'friend\')">🤝朋友</button>' +
+        '<button class="mini-btn" onclick="sendRelation(\'' + p.id + '\',\'lover\')">💕恋人</button>' +
+        '<button class="mini-btn" onclick="sendRelation(\'' + p.id + '\',\'spouse\')">💍结婚</button>' +
+      '</div>') +
+      '</div>';
+  }
+  $('panelWorld').innerHTML = html;
+}
+
+function renderRel(relations, incoming) {
+  if (currentTab !== 'rel') return;
+  let html = '';
+  if (incoming && incoming.length) {
+    html += '<div class="section-title">📥 收到的结缘请求</div>';
+    for (const r of incoming) {
+      html += '<div class="rel-item"><div class="rel-emoji">' + r.typeEmoji + '</div>' +
+        '<div class="p-info"><div class="p-name">' + esc(r.fromName) + '</div><div class="p-sub">想和你结为' + r.typeName + '</div></div>' +
+        '<div class="p-actions"><button class="mini-btn accept" onclick="respond(\'' + r.id + '\',true)">接受</button>' +
+        '<button class="mini-btn decline" onclick="respond(\'' + r.id + '\',false)">拒绝</button></div></div>';
+    }
+  }
+  if (relations && relations.length) {
+    html += '<div class="section-title">💞 我的关系</div>';
+    for (const r of relations) {
+      html += '<div class="rel-item"><div class="rel-emoji">' + r.typeEmoji + '</div>' +
+        '<div class="p-info"><div class="p-name">' + esc(r.withName) + '</div><div class="p-sub">' + r.typeName + '</div></div></div>';
+    }
+  }
+  if (!html) html = '<div class="empty">还没有结缘关系。去「世界」看看其他玩家，发送结缘请求吧～</div>';
+  $('panelRel').innerHTML = html;
+}
+
+// ---------- 数据刷新 ----------
+async function refreshMe() {
+  if (!myId) return;
+  try {
+    const d = await api('/api/me?id=' + myId);
+    if (d.ok) renderMe(d);
+  } catch (e) {}
+}
+async function refreshWorld() {
+  try {
+    const d = await api('/api/world');
+    if (d.ok) { worldList = d.players; renderWorld(); $('worldCount').textContent = '当前世界有 ' + d.total + ' 位玩家'; }
+  } catch (e) {}
+}
+
+// ---------- 行动 ----------
+async function doAction(key) {
+  if (!myId) return;
+  try {
+    const d = await api('/api/action', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: myId, action: key })
+    });
+    if (d.ok) {
+      toast(d.eventText || d.msg);
+      renderMe({ player: d.player, log: d.log, relations: me ? me.relations : [], incoming: [] });
+      refreshWorld();
+    } else {
+      toast(d.msg || '操作失败');
+    }
+  } catch (e) { toast('网络错误'); }
+}
+
+// ---------- 结缘 ----------
+async function sendRelation(targetId, type) {
+  if (!myId) return;
+  try {
+    const d = await api('/api/relation', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: myId, targetId, type })
+    });
+    toast(d.msg || (d.ok ? '已发送' : '操作失败'));
+    if (d.ok) refreshMe();
+  } catch (e) { toast('网络错误'); }
+}
+async function respond(requestId, accept) {
+  if (!myId) return;
+  try {
+    const d = await api('/api/respond', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: myId, requestId, accept })
+    });
+    toast(d.msg || '已处理');
+    refreshMe();
+  } catch (e) { toast('网络错误'); }
+}
+
+// ---------- 聊天室 ----------
+function fmtTime(t) {
+  const d = new Date(t);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderChat(messages, append) {
+  const box = $('chatBox');
+  if (!append) {
+    box.innerHTML = '';
+    if (!messages.length) { box.innerHTML = '<div class="chat-sys">聊天室还很安静，说句话吧 👋</div>'; return; }
+  }
+  for (const m of messages) {
+    const isMine = m.from === myId;
+    const el = document.createElement('div');
+    el.className = 'chat-msg' + (isMine ? ' mine' : '');
+    el.innerHTML = '<div class="m-head"><span class="m-name">' + esc(m.fromName) + '</span></div>' +
+      '<div class="m-bubble">' + esc(m.text) + '</div>' +
+      '<div class="m-time">' + fmtTime(m.t) + '</div>';
+    box.appendChild(el);
+  }
+  // 截断 DOM，最多保留 120 条
+  while (box.children.length > 120) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function refreshChat() {
+  if (!myId) return;
+  try {
+    const d = await api('/api/chat?after=' + chatLast);
+    if (d.ok) {
+      if (d.messages && d.messages.length) {
+        renderChat(d.messages, chatLoaded);
+        if (d.latest > chatLast) chatLast = d.latest;
+      } else if (!chatLoaded) {
+        renderChat([], false);
+      }
+      chatLoaded = true;
+    }
+  } catch (e) {}
+}
+
+async function sendChat() {
+  if (!myId) return;
+  const input = $('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const btn = $('chatSendBtn');
+  btn.disabled = true;
+  try {
+    const d = await api('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: myId, text })
+    });
+    if (d.ok) { input.value = ''; refreshChat(); }
+    else { toast(d.msg || '发送失败'); }
+  } catch (e) { toast('网络错误'); }
+  btn.disabled = false;
+}
+
+// ---------- Tab 切换 ----------
+function switchTab(tab, el) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  $('panelLog').classList.toggle('hidden', tab !== 'log');
+  $('panelWorld').classList.toggle('hidden', tab !== 'world');
+  $('panelRel').classList.toggle('hidden', tab !== 'rel');
+  $('panelChat').classList.toggle('hidden', tab !== 'chat');
+  if (tab === 'world') renderWorld();
+  if (tab === 'rel' && me) renderRel(me.relations || [], me.incoming || []);
+  if (tab === 'log' && me) refreshMe();
+  if (tab === 'chat') { refreshChat(); const b = $('chatBox'); b.scrollTop = b.scrollHeight; }
+}
+
+// ---------- 初始化 ----------
+function init() {
+  // 渲染行动按钮
+  let html = '';
+  for (const a of ACTIONS) {
+    html += '<div class="act-btn" onclick="doAction(\'' + a.key + '\')">' +
+      '<span class="a-emoji">' + a.emoji + '</span><div class="a-name">' + a.name + '</div>' +
+      '<div class="a-desc">' + a.desc + '</div></div>';
+  }
+  $('actionsBox').innerHTML = html;
+
+  refreshWorld();
+
+  if (myId) {
+    // 已有存档，直接进入
+    enterGame();
+  }
+}
+init();
+</script>
+</body>
+</html>
