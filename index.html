@@ -345,7 +345,7 @@ function newPlayer(world, username, gender, passwordHash) {
     actionCount: 0,
     energyAt: Date.now(),
     money: 1000,
-    stats: { intel: 30, health: 60, happy: 60, charm: 30, energy: 100 },
+    stats: { intel: 0, health: 0, happy: 0, charm: 0, energy: 100 },
     alive: true,
     log: [],
     createdAt: Date.now(),
@@ -992,11 +992,24 @@ function init() {
 
   refreshWorld();
 
+  bootstrap();
+}
+
+// 校验存档 id 是否仍有效（世界可能被重置、角色可能被清除）
+async function bootstrap() {
   if (myId) {
-    // 有存档 id，尝试直接进入
+    try {
+      const world = await loadWorld();
+      if (!getPlayer(world, myId)) {
+        // 角色已不存在，清除失效的存档 id，回到登录/自动登录
+        myId = null;
+        localStorage.removeItem('lifeSimPlayerId');
+      }
+    } catch (e) {}
+  }
+  if (myId) {
     enterGame();
   } else {
-    // 尝试记住密码自动登录
     tryAutoLogin();
   }
 }
