@@ -35,18 +35,26 @@
 
   /* ---------- 登录页 ---------- */
   #login { max-width: 460px; margin: 0 auto; padding: 20px; }
-  .logo { text-align: center; margin: 40px 0 30px; }
+  .logo { text-align: center; margin: 36px 0 26px; }
   .logo .emoji { font-size: 64px; display: block; animation: float 3s ease-in-out infinite; }
   .logo h1 { font-size: 28px; margin-top: 10px; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
   .logo p { color: var(--dim); margin-top: 6px; font-size: 14px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; backdrop-filter: blur(8px); }
   .field { margin-bottom: 16px; }
   .field label { display: block; font-size: 13px; color: var(--dim); margin-bottom: 8px; }
-  .field input[type=text] {
+  .field input[type=text], .field input[type=password] {
     width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--border);
     background: rgba(0,0,0,0.3); color: var(--text); font-size: 16px; outline: none;
   }
-  .field input[type=text]:focus { border-color: var(--accent); }
+  .field input[type=text]:focus, .field input[type=password]:focus { border-color: var(--accent); }
+
+  .auth-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+  .auth-tab { flex: 1; padding: 11px; text-align: center; border-radius: 10px; background: rgba(0,0,0,.2); border: 1px solid var(--border); cursor: pointer; font-size: 15px; color: var(--dim); transition: all .15s; }
+  .auth-tab.on { background: rgba(255,107,157,.15); border-color: var(--accent); color: var(--text); font-weight: 600; }
+
+  .remember-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 14px; color: var(--dim); cursor: pointer; }
+  .remember-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+
   .gender-row { display: flex; gap: 10px; }
   .gender-btn {
     flex: 1; padding: 14px; border-radius: 12px; border: 1px solid var(--border);
@@ -60,6 +68,7 @@
   }
   .btn:active { transform: scale(0.97); }
   .btn:disabled { opacity: .5; }
+  .auth-hint { text-align: center; margin-top: 12px; font-size: 12px; color: var(--dim); }
 
   /* ---------- 游戏页 ---------- */
   .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
@@ -156,22 +165,57 @@
     <p>所有角色都是真人玩家 · 上学 · 工作 · 结缘</p>
   </div>
   <div class="card">
-    <div class="field">
-      <label>给自己起个名字</label>
-      <input type="text" id="nameInput" placeholder="输入名字（最多12字）" maxlength="12">
+    <div class="auth-tabs">
+      <div class="auth-tab on" id="tabLogin" onclick="switchAuth('login')">登录</div>
+      <div class="auth-tab" id="tabRegister" onclick="switchAuth('register')">注册</div>
     </div>
-    <div class="field">
-      <label>选择性别</label>
-      <div class="gender-row">
-        <div class="gender-btn on" id="gMale" onclick="setGender('male')">
-          <span class="g-emoji">👦</span>男
-        </div>
-        <div class="gender-btn" id="gFemale" onclick="setGender('female')">
-          <span class="g-emoji">👧</span>女
+
+    <!-- 登录表单 -->
+    <div id="authLogin">
+      <div class="field">
+        <label>账号名</label>
+        <input type="text" id="loginUser" placeholder="输入账号名" maxlength="20" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="loginPass" placeholder="输入密码" autocomplete="current-password">
+      </div>
+      <div class="remember-row" onclick="toggleRemember()">
+        <input type="checkbox" id="rememberMe">
+        <span>记住密码（下次自动登录）</span>
+      </div>
+      <button class="btn" id="loginBtn" onclick="doLogin()">🚪 登录</button>
+      <div class="auth-hint">还没有账号？点上方「注册」创建一个</div>
+    </div>
+
+    <!-- 注册表单 -->
+    <div id="authRegister" class="hidden">
+      <div class="field">
+        <label>账号名</label>
+        <input type="text" id="regUser" placeholder="输入账号名（3-20位）" maxlength="20" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="regPass" placeholder="输入密码（至少4位）" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label>确认密码</label>
+        <input type="password" id="regPass2" placeholder="再输入一遍密码" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label>选择性别</label>
+        <div class="gender-row">
+          <div class="gender-btn on" id="gMale" onclick="setGender('male')">
+            <span class="g-emoji">👦</span>男
+          </div>
+          <div class="gender-btn" id="gFemale" onclick="setGender('female')">
+            <span class="g-emoji">👧</span>女
+          </div>
         </div>
       </div>
+      <button class="btn" id="regBtn" onclick="doRegister()">🌱 注册并进入</button>
+      <div class="auth-hint">已有账号？点上方「登录」</div>
     </div>
-    <button class="btn" id="enterBtn" onclick="register()">🌱 进入世界</button>
   </div>
   <div style="text-align:center;margin-top:14px;color:var(--dim);font-size:12px;" id="worldCount"></div>
 </div>
@@ -216,8 +260,266 @@
 <div id="toast"></div>
 
 <script>
-// ---------- 全局状态 ----------
-const API = 'https://life-sim-online-yxrryxggwd.cn-hangzhou.fcapp.run'; // 数据接口指向阿里云函数
+// ============================================================
+//  纯前端 + Supabase 直连版（不依赖任何后端服务器）
+// ============================================================
+
+const SB_URL = 'https://vsyoivroqesxrhruzusu.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzeW9pdnJvcWVzeHJocnV6dXN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NDQ0MDAsImV4cCI6MjEwMzIyMDQwMH0.umDWcuRLUcDuBiVlUeB2IO3rb0LxkDvf8VqlIENHn9k';
+const SB_HEADERS = { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY };
+
+// ---------- 世界状态 ----------
+const LIFE_STAGES = [
+  { min: 0, max: 2, name: '婴儿' },
+  { min: 3, max: 5, name: '幼儿' },
+  { min: 6, max: 11, name: '小学' },
+  { min: 12, max: 14, name: '初中' },
+  { min: 15, max: 17, name: '高中' },
+  { min: 18, max: 21, name: '大学' },
+  { min: 22, max: 59, name: '职场' },
+  { min: 60, max: 200, name: '老年' },
+];
+
+const REL_TYPES = {
+  friend: { name: '朋友', emoji: '🤝' },
+  lover:  { name: '恋人', emoji: '💕' },
+  spouse: { name: '结婚', emoji: '💍' },
+};
+
+const MAX_AGE = 100;
+const MAX_CHAT = 200;
+
+const ACTIONS = [
+  { key: 'study',    name: '学习', emoji: '📚', desc: '读书学习，提升智力' },
+  { key: 'work',     name: '工作', emoji: '💼', desc: '上班工作，赚取收入' },
+  { key: 'exercise', name: '运动', emoji: '🏃', desc: '锻炼身体，增强体质' },
+  { key: 'rest',     name: '休息', emoji: '😴', desc: '好好休息，恢复精力' },
+  { key: 'play',     name: '娱乐', emoji: '🎮', desc: '放松玩乐，提升快乐' },
+  { key: 'social',   name: '社交', emoji: '💬', desc: '结识朋友，提升魅力' },
+  { key: 'parttime', name: '打工', emoji: '🧹', desc: '兼职打工，赚零花钱' },
+];
+
+const ACTIONS_MAP = {};
+for (const a of ACTIONS) ACTIONS_MAP[a.key] = a;
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function randHex(n) {
+  const arr = new Uint8Array(n);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function emptyWorld() { return { players: {}, requests: [], relations: [], chat: [], seq: 0 }; }
+
+function normalizeWorld(d) {
+  if (d && d.players) {
+    if (!Array.isArray(d.chat)) d.chat = [];
+    if (!Array.isArray(d.requests)) d.requests = [];
+    if (!Array.isArray(d.relations)) d.relations = [];
+    if (typeof d.seq !== 'number') d.seq = 0;
+    return d;
+  }
+  return emptyWorld();
+}
+
+function getStage(age) {
+  return LIFE_STAGES.find((s) => age >= s.min && age <= s.max) || LIFE_STAGES[LIFE_STAGES.length - 1];
+}
+
+function newPlayer(world, username, gender, passwordHash) {
+  const name = String(username || '').trim().slice(0, 12) || '玩家';
+  return {
+    id: 'p' + (++world.seq) + '_' + randHex(3),
+    username: String(username || '').trim(),
+    name: name,
+    gender: gender === 'female' ? 'female' : 'male',
+    age: 0,
+    money: 1000,
+    stats: { intel: 30, health: 60, happy: 60, charm: 30, energy: 100 },
+    alive: true,
+    log: [],
+    createdAt: Date.now(),
+    lastActive: Date.now(),
+    passwordHash: passwordHash,
+  };
+}
+
+function addLog(p, text) {
+  p.log.unshift({ t: Date.now(), text });
+  if (p.log.length > 40) p.log.length = 40;
+}
+
+function lifeStageText(age) { return getStage(age).name; }
+
+function milestoneEvents(p, oldAge, newAge) {
+  const ms = [
+    [3, '进入幼儿期，开始认识世界 👶'],
+    [6, '上小学啦，人生新起点 🏫'],
+    [12, '升入初中 🎒'],
+    [15, '升入高中，冲刺高考 📖'],
+    [18, '成年啦！迎来人生新篇章 🎓'],
+    [22, '进入社会，开启职场生涯 💼'],
+    [60, '光荣退休，享受晚年 🌅'],
+  ];
+  for (const [a, msg] of ms) {
+    if (oldAge < a && newAge >= a) addLog(p, msg);
+  }
+}
+
+function applyAction(p, key) {
+  const act = ACTIONS_MAP[key];
+  if (!act) return { ok: false, msg: '未知动作' };
+  if (!p.alive) return { ok: false, msg: '已故，无法行动' };
+
+  const s = p.stats;
+  const stage = getStage(p.age);
+  const before = { ...s };
+  const oldAge = p.age;
+  let energyCost = 0;
+  const changes = [];
+
+  switch (key) {
+    case 'study': {
+      energyCost = 25;
+      const bonus = (stage.name === '小学' || stage.name === '初中' || stage.name === '高中') ? 5 : 0;
+      s.intel = clamp(s.intel + 10 + bonus, 0, 100);
+      s.happy = clamp(s.happy - 3, 0, 100);
+      changes.push('智力+' + (s.intel - before.intel));
+      break;
+    }
+    case 'work': {
+      energyCost = 30;
+      if (p.age < 18) { addLog(p, '未成年还不能正式工作，试试「打工」或「学习」'); return { ok: false, msg: '未成年不能工作，试试「打工」或「学习」' }; }
+      const earn = Math.round(80 + s.intel * 2.5 + (stage.name === '职场' ? 50 : 0));
+      p.money += earn;
+      s.intel = clamp(s.intel + 2, 0, 100);
+      changes.push('收入 +¥' + earn);
+      break;
+    }
+    case 'exercise':
+      energyCost = 25;
+      s.health = clamp(s.health + 8, 0, 100);
+      s.charm = clamp(s.charm + 3, 0, 100);
+      changes.push('健康+' + (s.health - before.health), '魅力+' + (s.charm - before.charm));
+      break;
+    case 'rest':
+      s.energy = clamp(s.energy + 45, 0, 100);
+      s.health = clamp(s.health + 4, 0, 100);
+      changes.push('精力+45', '健康+4');
+      break;
+    case 'play':
+      energyCost = 15;
+      if (p.money < 50) { addLog(p, '钱不够，娱乐要花 50 元'); return { ok: false, msg: '娱乐需要 50 元，先去赚点钱吧' }; }
+      p.money -= 50;
+      s.happy = clamp(s.happy + 12, 0, 100);
+      changes.push('快乐+' + (s.happy - before.happy));
+      break;
+    case 'social':
+      energyCost = 15;
+      s.happy = clamp(s.happy + 6, 0, 100);
+      s.charm = clamp(s.charm + 5, 0, 100);
+      changes.push('快乐+' + (s.happy - before.happy), '魅力+' + (s.charm - before.charm));
+      break;
+    case 'parttime':
+      energyCost = 20;
+      if (p.age >= 18) { addLog(p, '已成年，直接「工作」赚更多'); return { ok: false, msg: '已成年，请用「工作」' }; }
+      const earn2 = Math.round(30 + s.intel * 0.8);
+      p.money += earn2;
+      changes.push('零花钱 +¥' + earn2);
+      break;
+  }
+
+  if (energyCost > 0) {
+    if (s.energy < energyCost) {
+      addLog(p, '精力不足，先去「休息」恢复一下 😴');
+      return { ok: false, msg: '精力不足（' + s.energy + '/100），请先「休息」' };
+    }
+    s.energy = clamp(s.energy - energyCost, 0, 100);
+  }
+
+  p.age = clamp(p.age + 1, 0, MAX_AGE);
+
+  let eventText = '';
+  const rand = Math.random();
+  if (rand < 0.04) { p.money += 500; eventText = '🍀 意外之财 +¥500！'; }
+  else if (rand < 0.08) { s.health = clamp(s.health - 10, 0, 100); eventText = '🤒 不小心生病了，健康-10'; }
+  else if (rand < 0.12) { s.happy = clamp(s.happy + 8, 0, 100); eventText = '🎉 遇到开心事，快乐+8'; }
+  if (eventText) addLog(p, eventText);
+
+  milestoneEvents(p, oldAge, p.age);
+
+  if (p.age >= MAX_AGE) {
+    p.alive = false;
+    addLog(p, '走完了精彩的一生，享年 ' + p.age + ' 岁 🌟');
+  }
+
+  p.lastActive = Date.now();
+
+  const msg = act.emoji + ' ' + act.name + '：' + (changes.length ? changes.join('，') : '无变化') + '，年龄 ' + oldAge + ' → ' + p.age + ' 岁';
+  return { ok: true, msg, eventText };
+}
+
+function publicPlayer(p) {
+  return {
+    id: p.id, name: p.name, gender: p.gender, age: p.age,
+    stage: lifeStageText(p.age), alive: p.alive, money: p.money,
+    stats: p.stats, lastActive: p.lastActive,
+  };
+}
+
+function getPlayer(world, id) { return world.players[id]; }
+
+function myRelations(world, pid) {
+  return world.relations
+    .filter((r) => r.a === pid || r.b === pid)
+    .map((r) => {
+      const otherId = r.a === pid ? r.b : r.a;
+      const otherP = world.players[otherId];
+      return { id: r.id, type: r.type, typeName: REL_TYPES[r.type].name, typeEmoji: REL_TYPES[r.type].emoji, withName: otherP ? otherP.name : '已注销', withId: otherId };
+    });
+}
+
+// ---------- Supabase 读写 ----------
+async function loadWorld() {
+  try {
+    const r = await fetch(SB_URL + '/rest/v1/game_state?id=eq.1&select=world', { headers: SB_HEADERS });
+    if (r.ok) {
+      const rows = await r.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].world) {
+        return normalizeWorld(rows[0].world);
+      }
+    }
+  } catch (e) { console.error('[存档] 加载失败', e); }
+  return emptyWorld();
+}
+
+async function saveWorld(world) {
+  try {
+    await fetch(SB_URL + '/rest/v1/game_state?id=eq.1', {
+      method: 'PATCH',
+      headers: { ...SB_HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ world }),
+    });
+  } catch (e) { console.error('[存档] 保存失败', e); }
+}
+
+// ---------- 写锁（同一客户端串行化写操作） ----------
+let writeQueue = Promise.resolve();
+function withLock(fn) {
+  const p = writeQueue.then(fn);
+  writeQueue = p.catch(() => {});
+  return p;
+}
+
+// ============================================================
+//  前端全局状态
+// ============================================================
 let myId = localStorage.getItem('lifeSimPlayerId') || null;
 let gender = 'male';
 let currentTab = 'log';
@@ -233,34 +535,113 @@ function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2200);
 }
-async function api(url, opts) {
-  const r = await fetch(API + url, opts);
-  return r.json();
+
+// ---------- 登录/注册 UI ----------
+function switchAuth(mode) {
+  const isLogin = mode === 'login';
+  $('tabLogin').classList.toggle('on', isLogin);
+  $('tabRegister').classList.toggle('on', !isLogin);
+  $('authLogin').classList.toggle('hidden', !isLogin);
+  $('authRegister').classList.toggle('hidden', isLogin);
 }
 
-// ---------- 登录 ----------
 function setGender(g) {
   gender = g;
   $('gMale').classList.toggle('on', g === 'male');
   $('gFemale').classList.toggle('on', g === 'female');
 }
 
-async function register() {
-  const name = $('nameInput').value.trim();
-  if (!name) { toast('先给自己起个名字吧'); return; }
-  $('enterBtn').disabled = true;
+function toggleRemember() {
+  const cb = $('rememberMe');
+  cb.checked = !cb.checked;
+}
+
+function rememberAccount(username, password) {
+  // 记住密码：明文存 localStorage（个人小游戏，便于回填自动登录）
+  localStorage.setItem('lifeSimAccount', JSON.stringify({ username, password }));
+}
+function clearRemember() {
+  localStorage.removeItem('lifeSimAccount');
+}
+
+// 登录
+async function doLogin() {
+  const username = $('loginUser').value.trim();
+  const password = $('loginPass').value;
+  if (!username) { toast('请输入账号名'); return; }
+  if (!password) { toast('请输入密码'); return; }
+  const btn = $('loginBtn');
+  btn.disabled = true;
   try {
-    const d = await api('/api/register', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, gender })
+    const world = await loadWorld();
+    const hash = await sha256(password);
+    const p = Object.values(world.players).find(x => x.username === username && x.passwordHash === hash);
+    if (!p) { toast('账号或密码错误'); btn.disabled = false; return; }
+    myId = p.id;
+    localStorage.setItem('lifeSimPlayerId', myId);
+    if ($('rememberMe').checked) rememberAccount(username, password); else clearRemember();
+    enterGame();
+  } catch (e) {
+    console.error(e);
+    toast('网络错误，请重试');
+  }
+  btn.disabled = false;
+}
+
+// 注册
+async function doRegister() {
+  const username = $('regUser').value.trim();
+  const password = $('regPass').value;
+  const password2 = $('regPass2').value;
+  if (username.length < 3) { toast('账号名至少 3 个字符'); return; }
+  if (password.length < 4) { toast('密码至少 4 位'); return; }
+  if (password !== password2) { toast('两次输入的密码不一致'); return; }
+  const btn = $('regBtn');
+  btn.disabled = true;
+  try {
+    const result = await withLock(async () => {
+      const world = await loadWorld();
+      const exists = Object.values(world.players).some(x => x.username === username);
+      if (exists) return { ok: false, msg: '账号名已被注册，换一个吧' };
+      const hash = await sha256(password);
+      const p = newPlayer(world, username, gender, hash);
+      world.players[p.id] = p;
+      addLog(p, '来到这个世界 👋');
+      await saveWorld(world);
+      return { ok: true, player: publicPlayer(p), id: p.id };
     });
-    if (d.ok) {
-      myId = d.player.id;
+    if (!result.ok) { toast(result.msg || '注册失败'); btn.disabled = false; return; }
+    myId = result.id;
+    localStorage.setItem('lifeSimPlayerId', myId);
+    if ($('rememberMe').checked) rememberAccount(username, password);
+    enterGame();
+  } catch (e) {
+    console.error(e);
+    toast('网络错误，请重试');
+  }
+  btn.disabled = false;
+}
+
+// 自动登录（记住密码后，下次自动填账号密码并尝试登录）
+async function tryAutoLogin() {
+  const saved = localStorage.getItem('lifeSimAccount');
+  if (!saved) return;
+  try {
+    const { username, password } = JSON.parse(saved);
+    if (!username || !password) return;
+    $('loginUser').value = username;
+    $('loginPass').value = password;
+    $('rememberMe').checked = true;
+    // 直接尝试登录
+    const world = await loadWorld();
+    const hash = await sha256(password);
+    const p = Object.values(world.players).find(x => x.username === username && x.passwordHash === hash);
+    if (p) {
+      myId = p.id;
       localStorage.setItem('lifeSimPlayerId', myId);
       enterGame();
-    } else { toast(d.msg || '注册失败'); }
-  } catch (e) { toast('网络错误，请重试'); }
-  $('enterBtn').disabled = false;
+    }
+  } catch (e) {}
 }
 
 function enterGame() {
@@ -292,16 +673,6 @@ const STAT_DEFS = [
   { key: 'energy', label: '精力', color: 'var(--yellow)' },
 ];
 
-const ACTIONS = [
-  { key: 'study', emoji: '📚', name: '学习', desc: '提升智力' },
-  { key: 'work', emoji: '💼', name: '工作', desc: '赚取收入' },
-  { key: 'exercise', emoji: '🏃', name: '运动', desc: '增强体质' },
-  { key: 'rest', emoji: '😴', name: '休息', desc: '恢复精力' },
-  { key: 'play', emoji: '🎮', name: '娱乐', desc: '提升快乐' },
-  { key: 'social', emoji: '💬', name: '社交', desc: '提升魅力' },
-  { key: 'parttime', emoji: '🧹', name: '打工', desc: '赚零花钱' },
-];
-
 function renderMe(d) {
   me = d.player;
   if (!me) return;
@@ -320,9 +691,7 @@ function renderMe(d) {
   }
   $('statsBox').innerHTML = html;
 
-  // 日志
   if (currentTab === 'log') renderLog(d.log || []);
-  // 结缘
   renderRel(d.relations || [], d.incoming || []);
   $('relBadge').classList.toggle('hidden', !(d.incoming || []).length);
   $('relBadge').textContent = (d.incoming || []).length;
@@ -387,14 +756,22 @@ function renderRel(relations, incoming) {
 async function refreshMe() {
   if (!myId) return;
   try {
-    const d = await api('/api/me?id=' + myId);
-    if (d.ok) renderMe(d);
+    const world = await loadWorld();
+    const p = getPlayer(world, myId);
+    if (!p) { return; }
+    const incoming = world.requests
+      .filter((r) => r.to === myId && r.status === 'pending')
+      .map((r) => ({ id: r.id, from: r.from, fromName: (getPlayer(world, r.from) || {}).name || '未知', type: r.type, typeName: REL_TYPES[r.type].name, typeEmoji: REL_TYPES[r.type].emoji }));
+    renderMe({ player: publicPlayer(p), log: p.log.slice(0, 20), relations: myRelations(world, myId), incoming });
   } catch (e) {}
 }
+
 async function refreshWorld() {
   try {
-    const d = await api('/api/world');
-    if (d.ok) { worldList = d.players; renderWorld(); $('worldCount').textContent = '当前世界有 ' + d.total + ' 位玩家'; }
+    const world = await loadWorld();
+    worldList = Object.values(world.players).map(publicPlayer).sort((a, b) => b.lastActive - a.lastActive);
+    renderWorld();
+    $('worldCount').textContent = '当前世界有 ' + worldList.length + ' 位玩家';
   } catch (e) {}
 }
 
@@ -402,9 +779,13 @@ async function refreshWorld() {
 async function doAction(key) {
   if (!myId) return;
   try {
-    const d = await api('/api/action', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: myId, action: key })
+    const d = await withLock(async () => {
+      const world = await loadWorld();
+      const p = getPlayer(world, myId);
+      if (!p) return { ok: false, msg: '角色不存在' };
+      const r = applyAction(p, key);
+      if (r.ok) await saveWorld(world);
+      return { ok: r.ok, msg: r.msg, eventText: r.eventText, player: publicPlayer(p), log: p.log.slice(0, 20) };
     });
     if (d.ok) {
       toast(d.eventText || d.msg);
@@ -420,20 +801,52 @@ async function doAction(key) {
 async function sendRelation(targetId, type) {
   if (!myId) return;
   try {
-    const d = await api('/api/relation', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: myId, targetId, type })
+    const d = await withLock(async () => {
+      const world = await loadWorld();
+      const p = getPlayer(world, myId);
+      const t = getPlayer(world, targetId);
+      if (!p || !t) return { ok: false, msg: '对方不存在' };
+      if (myId === targetId) return { ok: false, msg: '不能和自己结缘' };
+      if (!REL_TYPES[type]) return { ok: false, msg: '关系类型错误' };
+      const exists = world.relations.find((r) => ((r.a === myId && r.b === targetId) || (r.a === targetId && r.b === myId)) && r.type === type);
+      if (exists) return { ok: false, msg: '你们已经是' + REL_TYPES[type].name + '了' };
+      const pend = world.requests.find((r) => r.from === myId && r.to === targetId && r.type === type && r.status === 'pending');
+      if (pend) return { ok: false, msg: '已发送过请求，等待对方回应' };
+      world.requests.push({ id: 'r' + (++world.seq) + '_' + randHex(3), from: myId, to: targetId, type: type, status: 'pending', createdAt: Date.now() });
+      addLog(p, '向「' + t.name + '」发送了' + REL_TYPES[type].name + '请求 ' + REL_TYPES[type].emoji);
+      await saveWorld(world);
+      return { ok: true, msg: '已向 ' + t.name + ' 发送' + REL_TYPES[type].name + '请求 ' + REL_TYPES[type].emoji };
     });
     toast(d.msg || (d.ok ? '已发送' : '操作失败'));
     if (d.ok) refreshMe();
   } catch (e) { toast('网络错误'); }
 }
+
 async function respond(requestId, accept) {
   if (!myId) return;
   try {
-    const d = await api('/api/respond', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: myId, requestId, accept })
+    const d = await withLock(async () => {
+      const world = await loadWorld();
+      const p = getPlayer(world, myId);
+      const rq = world.requests.find((r) => r.id === requestId);
+      if (!p || !rq) return { ok: false, msg: '请求不存在' };
+      if (rq.to !== myId) return { ok: false, msg: '无权处理' };
+      if (rq.status !== 'pending') return { ok: false, msg: '请求已处理' };
+      const from = getPlayer(world, rq.from);
+      if (accept) {
+        rq.status = 'accepted';
+        world.relations.push({ id: 'rel' + (++world.seq), a: rq.from, b: rq.to, type: rq.type, createdAt: Date.now() });
+        if (from) { from.stats.happy = clamp(from.stats.happy + 10, 0, 100); from.stats.charm = clamp(from.stats.charm + 5, 0, 100); addLog(from, '和「' + p.name + '」结为' + REL_TYPES[rq.type].name + ' 🎉'); }
+        p.stats.happy = clamp(p.stats.happy + 10, 0, 100);
+        p.stats.charm = clamp(p.stats.charm + 5, 0, 100);
+        addLog(p, '和「' + (from ? from.name : '未知') + '」结为' + REL_TYPES[rq.type].name + ' 🎉');
+        await saveWorld(world);
+        return { ok: true, msg: '你们结为' + REL_TYPES[rq.type].name + '了！' };
+      } else {
+        rq.status = 'declined';
+        await saveWorld(world);
+        return { ok: true, msg: '已拒绝该请求' };
+      }
     });
     toast(d.msg || '已处理');
     refreshMe();
@@ -464,7 +877,6 @@ function renderChat(messages, append) {
       '<div class="m-time">' + fmtTime(m.t) + '</div>';
     box.appendChild(el);
   }
-  // 截断 DOM，最多保留 120 条
   while (box.children.length > 120) box.removeChild(box.firstChild);
   box.scrollTop = box.scrollHeight;
 }
@@ -472,16 +884,16 @@ function renderChat(messages, append) {
 async function refreshChat() {
   if (!myId) return;
   try {
-    const d = await api('/api/chat?after=' + chatLast);
-    if (d.ok) {
-      if (d.messages && d.messages.length) {
-        renderChat(d.messages, chatLoaded);
-        if (d.latest > chatLast) chatLast = d.latest;
-      } else if (!chatLoaded) {
-        renderChat([], false);
-      }
-      chatLoaded = true;
+    const world = await loadWorld();
+    const after = chatLast;
+    const msgs = (world.chat || []).filter((m) => m.t > after);
+    if (msgs.length) {
+      renderChat(msgs.slice(-100), chatLoaded);
+      if (msgs.length) chatLast = msgs[msgs.length - 1].t;
+    } else if (!chatLoaded) {
+      renderChat([], false);
     }
+    chatLoaded = true;
   } catch (e) {}
 }
 
@@ -493,9 +905,17 @@ async function sendChat() {
   const btn = $('chatSendBtn');
   btn.disabled = true;
   try {
-    const d = await api('/api/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: myId, text })
+    const d = await withLock(async () => {
+      const world = await loadWorld();
+      const p = getPlayer(world, myId);
+      if (!p) return { ok: false, msg: '角色不存在' };
+      if (p.alive === false) return { ok: false, msg: '已故，无法聊天' };
+      const content = String(text).slice(0, 200);
+      if (!world.chat) world.chat = [];
+      world.chat.push({ id: 'm' + (++world.seq) + '_' + randHex(2), from: myId, fromName: p.name, text: content, t: Date.now() });
+      if (world.chat.length > MAX_CHAT) world.chat = world.chat.slice(-MAX_CHAT);
+      await saveWorld(world);
+      return { ok: true };
     });
     if (d.ok) { input.value = ''; refreshChat(); }
     else { toast(d.msg || '发送失败'); }
@@ -520,7 +940,6 @@ function switchTab(tab, el) {
 
 // ---------- 初始化 ----------
 function init() {
-  // 渲染行动按钮
   let html = '';
   for (const a of ACTIONS) {
     html += '<div class="act-btn" onclick="doAction(\'' + a.key + '\')">' +
@@ -532,8 +951,11 @@ function init() {
   refreshWorld();
 
   if (myId) {
-    // 已有存档，直接进入
+    // 有存档 id，尝试直接进入
     enterGame();
+  } else {
+    // 尝试记住密码自动登录
+    tryAutoLogin();
   }
 }
 init();
