@@ -145,6 +145,15 @@
   #toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px); background: rgba(0,0,0,.85); color: #fff; padding: 12px 20px; border-radius: 12px; font-size: 14px; opacity: 0; pointer-events: none; transition: all .3s; max-width: 88%; text-align: center; z-index: 99; }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  /* ---------- 答题弹窗 ---------- */
+  .quiz-mask { position: fixed; inset: 0; background: rgba(0,0,0,.68); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+  .quiz-card { background: #1e1e38; border: 1px solid var(--border); border-radius: 18px; padding: 22px; max-width: 460px; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+  .quiz-subject { display: inline-block; background: rgba(96,165,250,.18); color: var(--blue); border: 1px solid rgba(96,165,250,.4); border-radius: 12px; padding: 4px 12px; font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+  .quiz-question { font-size: 18px; line-height: 1.65; margin-bottom: 20px; font-weight: 600; word-break: break-word; }
+  .quiz-options { display: flex; flex-direction: column; gap: 10px; }
+  .quiz-opt { text-align: left; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: rgba(0,0,0,.25); color: var(--text); font-size: 15px; cursor: pointer; transition: all .15s; line-height: 1.45; word-break: break-word; }
+  .quiz-opt:active { transform: scale(0.98); border-color: var(--accent); background: rgba(255,107,157,.12); }
+
   .dead-banner { background: rgba(248,113,113,.15); border: 1px solid var(--red); color: var(--red); border-radius: 12px; padding: 12px; text-align: center; margin-bottom: 14px; font-size: 14px; }
 
   @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
@@ -259,6 +268,16 @@
 
 <div id="toast"></div>
 
+<!-- 答题弹窗 -->
+<div id="quizModal" class="quiz-mask hidden">
+  <div class="quiz-card">
+    <div class="quiz-subject" id="quizSubject">数学</div>
+    <div class="quiz-question" id="quizQuestion">题目</div>
+    <div class="quiz-options" id="quizOptions"></div>
+  </div>
+</div>
+
+<script src="questions.js"></script>
 <script>
 // ============================================================
 //  纯前端 + Supabase 直连版（不依赖任何后端服务器）
@@ -292,7 +311,7 @@ const ACTIONS_PER_YEAR = 36;   // 36 个行动长大 1 岁
 const ENERGY_PER_MIN = 10;     // 每 1 分钟恢复 10 点精力
 
 const ACTIONS = [
-  { key: 'study',    name: '学习', emoji: '📚', desc: '提升智力' },
+  { key: 'study',    name: '学习', emoji: '📚', desc: '答题，答对智力+1' },
   { key: 'work',     name: '工作', emoji: '💼', desc: '18岁+，赚100金币' },
   { key: 'exercise', name: '运动', emoji: '🏃', desc: '增强体质' },
   { key: 'rest',     name: '休息', emoji: '😴', desc: '退出游戏，精力随时间恢复' },
@@ -387,7 +406,7 @@ function milestoneEvents(p, oldAge, newAge) {
   }
 }
 
-function applyAction(p, key) {
+function applyAction(p, key, studyCorrect) {
   const act = ACTIONS_MAP[key];
   if (!act) return { ok: false, msg: '未知动作' };
   if (!p.alive) return { ok: false, msg: '已故，无法行动' };
@@ -404,8 +423,12 @@ function applyAction(p, key) {
   switch (key) {
     case 'study': {
       energyCost = 25;
-      s.intel = clamp(s.intel + 10, 0, 100);
-      changes.push('智力+' + (s.intel - before.intel));
+      if (studyCorrect === true) {
+        s.intel = clamp(s.intel + 1, 0, 100);
+        changes.push('答对！智力+1');
+      } else {
+        changes.push('答错了，智力不变');
+      }
       break;
     }
     case 'work': {
@@ -815,6 +838,7 @@ async function refreshWorld() {
 // ---------- 行动 ----------
 async function doAction(key) {
   if (!myId) return;
+  if (key === 'study') { startStudy(); return; }
   try {
     const d = await withLock(async () => {
       const world = await loadWorld();
@@ -832,6 +856,68 @@ async function doAction(key) {
     if (d.ok) {
       toast(d.eventText || d.msg);
       renderMe({ player: d.player, liveEnergy: d.liveEnergy, log: d.log, relations: me ? me.relations : [], incoming: [] });
+      refreshWorld();
+    } else {
+      toast(d.msg || '操作失败');
+    }
+  } catch (e) { toast('网络错误'); }
+}
+
+// ---------- 学习：答题 ----------
+let pendingStudy = null;
+const SUBJECT_NAMES = { math: '数学', english: '英语', physics: '物理', chemistry: '化学', biology: '生物' };
+
+function startStudy() {
+  if (!myId) return;
+  if (typeof QUESTIONS === 'undefined' || !QUESTIONS.length) { toast('题库加载失败，请刷新页面'); return; }
+  (async () => {
+    try {
+      const world = await loadWorld();
+      const p = getPlayer(world, myId);
+      if (!p) { toast('角色不存在'); return; }
+      if (p.alive === false) { toast('已故，无法学习'); return; }
+      settleEnergy(p);
+      if (p.stats.energy < 25) { toast('精力不足（' + p.stats.energy + '/100），休息或等几分钟再学习'); return; }
+      const q = QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
+      pendingStudy = q;
+      showStudyModal(q);
+    } catch (e) { toast('网络错误'); }
+  })();
+}
+
+function showStudyModal(q) {
+  $('quizSubject').textContent = SUBJECT_NAMES[q.s] || '综合';
+  $('quizQuestion').textContent = q.q;
+  const opts = $('quizOptions');
+  opts.innerHTML = '';
+  q.o.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'quiz-opt';
+    btn.textContent = opt;
+    btn.onclick = () => submitStudy(i);
+    opts.appendChild(btn);
+  });
+  $('quizModal').classList.remove('hidden');
+}
+
+async function submitStudy(choiceIdx) {
+  if (!myId || !pendingStudy) return;
+  const q = pendingStudy;
+  pendingStudy = null;
+  const correct = (choiceIdx === q.a);
+  $('quizModal').classList.add('hidden');
+  try {
+    const d = await withLock(async () => {
+      const world = await loadWorld();
+      const p = getPlayer(world, myId);
+      if (!p) return { ok: false, msg: '角色不存在' };
+      const r = applyAction(p, 'study', correct);
+      if (r.ok) await saveWorld(world);
+      return { ok: r.ok, msg: r.msg, eventText: r.eventText, player: publicPlayer(p), liveEnergy: liveEnergy(p), log: p.log.slice(0, 20), correct };
+    });
+    if (d.ok) {
+      toast((d.correct ? '✅ 答对了！智力+1' : '❌ 答错了，智力不变') + (d.eventText ? '，' + d.eventText : ''));
+      renderMe({ player: d.player, liveEnergy: d.liveEnergy, log: d.log, relations: me ? me.relations : [], incoming: (me && me.incoming) || [] });
       refreshWorld();
     } else {
       toast(d.msg || '操作失败');
