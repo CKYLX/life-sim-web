@@ -341,6 +341,21 @@
   </div>
 </div>
 
+<!-- 私聊弹窗 -->
+<div id="dmModal" class="pk-mask hidden">
+  <div class="pk-card">
+    <div class="pk-head">
+      <div class="pk-name" id="dmTitle" style="font-size:16px">私聊</div>
+      <button class="pk-quit" onclick="closeDm()">关闭</button>
+    </div>
+    <div class="chat-box" id="dmBox" style="height:260px;flex:none"></div>
+    <div class="chat-input-row">
+      <input type="text" id="dmInput" placeholder="发消息…" maxlength="200" onkeydown="if(event.key==='Enter')sendDm()">
+      <button class="send-btn" onclick="sendDm()">发送</button>
+    </div>
+  </div>
+</div>
+
 <script src="questions.js"></script>
 <script src="pk.js"></script>
 <script>
@@ -372,6 +387,7 @@ const REL_TYPES = {
 
 const MAX_AGE = 100;
 const MAX_CHAT = 200;
+const MAX_DM = 500;
 const ACTIONS_PER_YEAR = 36;   // 36 个行动长大 1 岁
 const ENERGY_PER_MIN = 10;     // 每 1 分钟恢复 10 点精力
 
@@ -381,7 +397,7 @@ const ACTIONS = [
   { key: 'exercise', name: '运动', emoji: '🏃', desc: '增强体质' },
   { key: 'rest',     name: '休息', emoji: '😴', desc: '退出游戏，精力随时间恢复' },
   { key: 'play',     name: '娱乐', emoji: '🎮', desc: '双人PK，赢+10魅力' },
-  { key: 'social',   name: '社交', emoji: '💬', desc: '花100金币，魅力+10' },
+  { key: 'social',   name: '社交', emoji: '💬', desc: '打开聊天，发言+0.5魅力' },
   { key: 'parttime', name: '打工', emoji: '🧹', desc: '16岁+，赚50金币' },
 ];
 
@@ -401,13 +417,14 @@ async function sha256(str) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function emptyWorld() { return { players: {}, requests: [], relations: [], chat: [], seq: 0 }; }
+function emptyWorld() { return { players: {}, requests: [], relations: [], chat: [], dms: [], seq: 0 }; }
 
 function normalizeWorld(d) {
   if (d && d.players) {
     if (!Array.isArray(d.chat)) d.chat = [];
     if (!Array.isArray(d.requests)) d.requests = [];
     if (!Array.isArray(d.relations)) d.relations = [];
+    if (!Array.isArray(d.dms)) d.dms = [];
     if (typeof d.seq !== 'number') d.seq = 0;
     return d;
   }
@@ -519,13 +536,6 @@ function applyAction(p, key, studyCorrect) {
       s.happy = clamp(s.happy + 10, 0, 100);
       changes.push('快乐+' + (s.happy - before.happy) + '（-¥100）');
       break;
-    case 'social':
-      energyCost = 15;
-      if (p.money < 100) { addLog(p, '金币不够，社交要花 100 金币'); return { ok: false, msg: '社交需要 100 金币，先去「打工」或「工作」赚金币吧' }; }
-      p.money -= 100;
-      s.charm = clamp(s.charm + 10, 0, 100);
-      changes.push('魅力+' + (s.charm - before.charm) + '（-¥100）');
-      break;
     case 'parttime':
       energyCost = 20;
       if (p.age < 16) { addLog(p, '需年满 16 岁才能打工，先「学习」吧'); return { ok: false, msg: '需年满 16 岁才能打工' }; }
@@ -633,9 +643,14 @@ let me = null;
 let worldList = [];
 let chatLast = 0;
 let chatLoaded = false;
+let dmPeerId = null;
+let dmPeerName = null;
+let dmLast = 0;
+let dmLoaded = false;
 
 // ---------- 工具 ----------
 function $(id) { return document.getElementById(id); }
+function fmtVal(v) { return Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
@@ -761,6 +776,7 @@ function enterGame() {
   timers.push(setInterval(refreshMe, 3000));
   timers.push(setInterval(refreshWorld, 5000));
   timers.push(setInterval(refreshChat, 2500));
+  timers.push(setInterval(refreshDm, 2500));
 }
 function clearTimers() {
   timers.forEach(clearInterval);
@@ -773,6 +789,10 @@ function logout() {
   me = null;
   chatLoaded = false;
   chatLast = 0;
+  dmPeerId = null;
+  dmPeerName = null;
+  dmLast = 0;
+  dmLoaded = false;
   $('game').classList.add('hidden');
   $('login').classList.remove('hidden');
   refreshWorld();
@@ -812,7 +832,7 @@ function renderMe(d) {
     if (s.key === 'energy' && d.liveEnergy != null) v = d.liveEnergy;
     html += '<div class="stat-row"><span class="s-label">' + s.label + '</span>' +
       '<div class="bar"><div class="fill" style="width:' + v + '%;background:' + s.color + '"></div></div>' +
-      '<span class="s-val">' + v + '</span></div>';
+      '<span class="s-val">' + fmtVal(v) + '</span></div>';
   }
   $('statsBox').innerHTML = html;
 
@@ -870,7 +890,8 @@ function renderRel(relations, incoming) {
     html += '<div class="section-title">💞 我的关系</div>';
     for (const r of relations) {
       html += '<div class="rel-item"><div class="rel-emoji">' + r.typeEmoji + '</div>' +
-        '<div class="p-info"><div class="p-name">' + esc(r.withName) + '</div><div class="p-sub">' + r.typeName + '</div></div></div>';
+        '<div class="p-info"><div class="p-name">' + esc(r.withName) + '</div><div class="p-sub">' + r.typeName + '</div></div>' +
+        '<div class="p-actions"><button class="mini-btn" onclick="openDm(\'' + r.withId + '\')">💬私聊</button></div></div>';
     }
   }
   if (!html) html = '<div class="empty">还没有结缘关系。去「世界」看看其他玩家，发送结缘请求吧～</div>';
@@ -905,6 +926,7 @@ async function doAction(key) {
   if (!myId) return;
   if (key === 'study') { startStudy(); return; }
   if (key === 'play') { startPk(); return; }
+  if (key === 'social') { goChat(); return; }
   try {
     const d = await withLock(async () => {
       const world = await loadWorld();
@@ -1030,9 +1052,9 @@ async function respond(requestId, accept) {
       if (accept) {
         rq.status = 'accepted';
         world.relations.push({ id: 'rel' + (++world.seq), a: rq.from, b: rq.to, type: rq.type, createdAt: Date.now() });
-        if (from) { from.stats.happy = clamp(from.stats.happy + 10, 0, 100); from.stats.charm = clamp(from.stats.charm + 5, 0, 100); addLog(from, '和「' + p.name + '」结为' + REL_TYPES[rq.type].name + ' 🎉'); }
+        if (from) { from.stats.happy = clamp(from.stats.happy + 10, 0, 100); from.stats.charm = clamp(from.stats.charm + 10, 0, 100); addLog(from, '和「' + p.name + '」结为' + REL_TYPES[rq.type].name + ' 🎉'); }
         p.stats.happy = clamp(p.stats.happy + 10, 0, 100);
-        p.stats.charm = clamp(p.stats.charm + 5, 0, 100);
+        p.stats.charm = clamp(p.stats.charm + 10, 0, 100);
         addLog(p, '和「' + (from ? from.name : '未知') + '」结为' + REL_TYPES[rq.type].name + ' 🎉');
         await saveWorld(world);
         return { ok: true, msg: '你们结为' + REL_TYPES[rq.type].name + '了！' };
@@ -1108,13 +1130,108 @@ async function sendChat() {
       if (!world.chat) world.chat = [];
       world.chat.push({ id: 'm' + (++world.seq) + '_' + randHex(2), from: myId, fromName: p.name, text: content, t: Date.now() });
       if (world.chat.length > MAX_CHAT) world.chat = world.chat.slice(-MAX_CHAT);
+      p.stats.charm = clamp(p.stats.charm + 0.5, 0, 100);
       await saveWorld(world);
       return { ok: true };
     });
-    if (d.ok) { input.value = ''; refreshChat(); }
+    if (d.ok) { input.value = ''; refreshChat(); refreshMe(); }
     else { toast(d.msg || '发送失败'); }
   } catch (e) { toast('网络错误'); }
   btn.disabled = false;
+}
+
+// ---------- 社交：打开聊天 ----------
+function goChat() {
+  if (!myId) return;
+  const tabs = document.querySelectorAll('.tab');
+  for (const t of tabs) { if (t.textContent.indexOf('聊天') >= 0) { switchTab('chat', t); break; } }
+  toast('💬 世界频道发言 +0.5 魅力，结缘后可私聊（私聊 +1 魅力）');
+}
+
+// ---------- 私聊 ----------
+function isDmBetween(m, a, b) {
+  return (m.from === a && m.to === b) || (m.from === b && m.to === a);
+}
+
+async function openDm(peerId) {
+  if (!myId) return;
+  if (peerId === myId) return;
+  try {
+    const world = await loadWorld();
+    const peer = getPlayer(world, peerId);
+    dmPeerId = peerId;
+    dmPeerName = peer ? peer.name : '对方';
+    $('dmTitle').textContent = '和 ' + dmPeerName + ' 私聊';
+    $('dmModal').classList.remove('hidden');
+    dmLast = 0;
+    dmLoaded = false;
+    await refreshDm();
+    $('dmInput').focus();
+  } catch (e) { toast('网络错误'); }
+}
+
+function closeDm() {
+  dmPeerId = null;
+  dmPeerName = null;
+  $('dmModal').classList.add('hidden');
+}
+
+function renderDm(messages, append) {
+  const box = $('dmBox');
+  if (!append) {
+    box.innerHTML = '';
+    if (!messages.length) { box.innerHTML = '<div class="chat-sys">你们还没有私聊，打个招呼吧 👋</div>'; return; }
+  }
+  for (const m of messages) {
+    const isMine = m.from === myId;
+    const el = document.createElement('div');
+    el.className = 'chat-msg' + (isMine ? ' mine' : '');
+    el.innerHTML = '<div class="m-head"><span class="m-name">' + esc(m.fromName) + '</span></div>' +
+      '<div class="m-bubble">' + esc(m.text) + '</div>' +
+      '<div class="m-time">' + fmtTime(m.t) + '</div>';
+    box.appendChild(el);
+  }
+  while (box.children.length > 120) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function refreshDm() {
+  if (!myId || !dmPeerId) return;
+  try {
+    const world = await loadWorld();
+    const msgs = (world.dms || []).filter((m) => isDmBetween(m, myId, dmPeerId) && m.t > dmLast);
+    if (msgs.length) {
+      renderDm(msgs.slice(-100), dmLoaded);
+      dmLast = msgs[msgs.length - 1].t;
+    } else if (!dmLoaded) {
+      renderDm([], false);
+    }
+    dmLoaded = true;
+  } catch (e) {}
+}
+
+async function sendDm() {
+  if (!myId || !dmPeerId) return;
+  const input = $('dmInput');
+  const text = input.value.trim();
+  if (!text) return;
+  try {
+    const d = await withLock(async () => {
+      const world = await loadWorld();
+      const p = getPlayer(world, myId);
+      if (!p) return { ok: false, msg: '角色不存在' };
+      if (p.alive === false) return { ok: false, msg: '已故，无法聊天' };
+      const content = String(text).slice(0, 200);
+      if (!world.dms) world.dms = [];
+      world.dms.push({ id: 'dm' + (++world.seq) + '_' + randHex(2), from: myId, to: dmPeerId, fromName: p.name, text: content, t: Date.now() });
+      if (world.dms.length > MAX_DM) world.dms = world.dms.slice(-MAX_DM);
+      p.stats.charm = clamp(p.stats.charm + 1, 0, 100);
+      await saveWorld(world);
+      return { ok: true };
+    });
+    if (d.ok) { input.value = ''; refreshDm(); refreshMe(); }
+    else toast(d.msg || '发送失败');
+  } catch (e) { toast('网络错误'); }
 }
 
 // ---------- Tab 切换 ----------
