@@ -154,6 +154,43 @@
   .quiz-opt { text-align: left; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: rgba(0,0,0,.25); color: var(--text); font-size: 15px; cursor: pointer; transition: all .15s; line-height: 1.45; word-break: break-word; }
   .quiz-opt:active { transform: scale(0.98); border-color: var(--accent); background: rgba(255,107,157,.12); }
 
+  /* ---------- PK 对战弹窗 ---------- */
+  .pk-mask { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; z-index: 210; padding: 16px; }
+  .pk-card { background: #1e1e38; border: 1px solid var(--border); border-radius: 18px; padding: 20px; max-width: 460px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+  .pk-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+  .pk-side { flex: 1; text-align: center; }
+  .pk-score-tag { display: inline-block; font-size: 12px; padding: 2px 10px; border-radius: 10px; margin-bottom: 6px; }
+  .pk-score-tag.dealer { background: rgba(251,191,36,.18); color: var(--yellow); border: 1px solid rgba(251,191,36,.4); }
+  .pk-score-tag.follower { background: rgba(96,165,250,.18); color: var(--blue); border: 1px solid rgba(96,165,250,.4); }
+  .pk-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .pk-score { font-size: 26px; font-weight: 800; color: var(--accent); }
+  .pk-vs { font-size: 20px; font-weight: 800; color: var(--dim); }
+  .pk-attr-row { text-align: center; font-size: 14px; color: var(--accent2); margin-bottom: 12px; min-height: 20px; }
+  .pk-report-row { display: flex; gap: 10px; margin-bottom: 12px; }
+  .pk-report { flex: 1; background: rgba(0,0,0,.3); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center; }
+  .pk-report span { display: block; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  .pk-report b { font-size: 22px; color: var(--text); }
+  .pk-log { max-height: 130px; overflow-y: auto; margin-bottom: 12px; background: rgba(0,0,0,.2); border-radius: 10px; padding: 8px 10px; }
+  .pk-log-item { font-size: 12px; color: var(--dim); padding: 3px 0; line-height: 1.5; }
+  .pk-actions { min-height: 40px; }
+  .pk-hint { text-align: center; font-size: 13px; color: var(--dim); padding: 10px 4px; }
+  .pk-attr-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .pk-attr-btn { padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: rgba(0,0,0,.25); color: var(--text); font-size: 14px; cursor: pointer; transition: all .15s; }
+  .pk-attr-btn:active { transform: scale(0.96); border-color: var(--accent); }
+  .pk-attr-val { display: block; font-size: 20px; font-weight: 700; color: var(--accent2); margin-top: 2px; }
+  .pk-input-row { margin-bottom: 10px; }
+  .pk-input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: rgba(0,0,0,.3); color: var(--text); font-size: 20px; text-align: center; outline: none; }
+  .pk-btn-row { display: flex; gap: 10px; }
+  .pk-btn { flex: 1; padding: 13px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; color: #fff; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .pk-btn:active { transform: scale(0.96); }
+  .pk-btn.danger { background: rgba(248,113,113,.25); border: 1px solid var(--red); color: var(--red); }
+  .pk-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .pk-result { text-align: center; font-size: 16px; font-weight: 700; padding: 14px; border-radius: 12px; margin-bottom: 10px; }
+  .pk-result.win { background: rgba(74,222,128,.15); border: 1px solid var(--green); color: var(--green); }
+  .pk-result.lose { background: rgba(248,113,113,.15); border: 1px solid var(--red); color: var(--red); }
+  .pk-foot { margin-top: 12px; text-align: center; }
+  .pk-quit { background: none; border: none; color: var(--dim); font-size: 12px; cursor: pointer; text-decoration: underline; }
+
   .dead-banner { background: rgba(248,113,113,.15); border: 1px solid var(--red); color: var(--red); border-radius: 12px; padding: 12px; text-align: center; margin-bottom: 14px; font-size: 14px; }
 
   @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
@@ -277,7 +314,35 @@
   </div>
 </div>
 
+<!-- PK 对战弹窗 -->
+<div id="pkModal" class="pk-mask hidden">
+  <div class="pk-card">
+    <div class="pk-head">
+      <div class="pk-side">
+        <div class="pk-score-tag" id="pkMyTag">庄家</div>
+        <div class="pk-name" id="pkMyName">我</div>
+        <div class="pk-score" id="pkMyScore">0</div>
+      </div>
+      <div class="pk-vs">VS</div>
+      <div class="pk-side">
+        <div class="pk-score-tag" id="pkOppTag">后家</div>
+        <div class="pk-name" id="pkOppName">对手</div>
+        <div class="pk-score" id="pkOppScore">0</div>
+      </div>
+    </div>
+    <div class="pk-attr-row" id="pkAttrRow"></div>
+    <div class="pk-report-row">
+      <div class="pk-report"><span>你的报点</span><b id="pkMyReport">—</b></div>
+      <div class="pk-report"><span>对方报点</span><b id="pkOppReport">—</b></div>
+    </div>
+    <div class="pk-log" id="pkLog"></div>
+    <div class="pk-actions" id="pkActions"></div>
+    <div class="pk-foot"><button class="pk-quit" onclick="quitPk()">退出 PK</button></div>
+  </div>
+</div>
+
 <script src="questions.js"></script>
+<script src="pk.js"></script>
 <script>
 // ============================================================
 //  纯前端 + Supabase 直连版（不依赖任何后端服务器）
@@ -315,7 +380,7 @@ const ACTIONS = [
   { key: 'work',     name: '工作', emoji: '💼', desc: '18岁+，赚100金币' },
   { key: 'exercise', name: '运动', emoji: '🏃', desc: '增强体质' },
   { key: 'rest',     name: '休息', emoji: '😴', desc: '退出游戏，精力随时间恢复' },
-  { key: 'play',     name: '娱乐', emoji: '🎮', desc: '花100金币，快乐+10' },
+  { key: 'play',     name: '娱乐', emoji: '🎮', desc: '双人PK，赢+10魅力' },
   { key: 'social',   name: '社交', emoji: '💬', desc: '花100金币，魅力+10' },
   { key: 'parttime', name: '打工', emoji: '🧹', desc: '16岁+，赚50金币' },
 ];
@@ -839,6 +904,7 @@ async function refreshWorld() {
 async function doAction(key) {
   if (!myId) return;
   if (key === 'study') { startStudy(); return; }
+  if (key === 'play') { startPk(); return; }
   try {
     const d = await withLock(async () => {
       const world = await loadWorld();
