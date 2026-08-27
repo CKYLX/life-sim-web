@@ -77,6 +77,9 @@
   .me-info .name { font-size: 20px; font-weight: 700; }
   .me-info .sub { font-size: 13px; color: var(--dim); margin-top: 3px; }
   .money-badge { background: rgba(251,191,36,.15); border: 1px solid rgba(251,191,36,.4); color: var(--yellow); padding: 6px 12px; border-radius: 20px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+  .money-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .music-btn { background: none; border: none; font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 4px; opacity: 1; transition: opacity .2s, filter .2s; }
+  .music-btn.off { opacity: .25; filter: grayscale(1); }
 
   .stats { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; margin-bottom: 14px; }
   .stat-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
@@ -274,7 +277,10 @@
       <div class="name" id="myName">玩家</div>
       <div class="sub" id="mySub">0岁 · 婴儿</div>
     </div>
-    <div class="money-badge" id="myMoney">¥1000</div>
+    <div class="money-wrap">
+      <button class="music-btn off" id="musicBtn" onclick="toggleMusic()" title="音乐开关">🎵</button>
+      <div class="money-badge" id="myMoney">¥1000</div>
+    </div>
   </div>
 
   <div class="dead-banner hidden" id="deadBanner">🌟 你已走完这一生。刷新页面可重新投胎开始新的人生。</div>
@@ -356,8 +362,20 @@
   </div>
 </div>
 
+<!-- 查看好友数值弹窗 -->
+<div id="statsModal" class="pk-mask hidden">
+  <div class="pk-card">
+    <div class="pk-head">
+      <div class="pk-name" id="statsTitle" style="font-size:16px">好友数值</div>
+      <button class="pk-quit" onclick="closeStats()">关闭</button>
+    </div>
+    <div id="statsBody"></div>
+  </div>
+</div>
+
 <script src="questions.js"></script>
 <script src="pk.js"></script>
+<script src="music.js"></script>
 <script>
 // ============================================================
 //  纯前端 + Supabase 直连版（不依赖任何后端服务器）
@@ -388,6 +406,7 @@ const REL_TYPES = {
 const MAX_AGE = 100;
 const MAX_CHAT = 200;
 const MAX_DM = 500;
+const SOCIAL_COST = 10;       // 社交每次消耗金币
 const ACTIONS_PER_YEAR = 36;   // 36 个行动长大 1 岁
 const ENERGY_PER_MIN = 10;     // 每 1 分钟恢复 10 点精力
 
@@ -566,6 +585,12 @@ function applyAction(p, key, studyCorrect) {
 
   milestoneEvents(p, oldAge, p.age);
 
+  // 16 岁以前，每长一岁 +500 压岁钱
+  if (p.age > oldAge && p.age < 16) {
+    p.money += 500;
+    addLog(p, '🎁 收到压岁钱 +¥500');
+  }
+
   if (p.age >= MAX_AGE) {
     p.alive = false;
     addLog(p, '走完了精彩的一生，享年 ' + p.age + ' 岁 🌟');
@@ -599,6 +624,21 @@ function myRelations(world, pid) {
       const otherP = world.players[otherId];
       return { id: r.id, type: r.type, typeName: REL_TYPES[r.type].name, typeEmoji: REL_TYPES[r.type].emoji, withName: otherP ? otherP.name : '已注销', withId: otherId };
     });
+}
+
+function isRelationBetween(rels, a, b, type) {
+  return rels.some((r) => ((r.a === a && r.b === b) || (r.a === b && r.b === a)) && r.type === type);
+}
+function hasSpouse(rels, pid) {
+  return rels.some((r) => (r.a === pid || r.b === pid) && r.type === 'spouse');
+}
+function canRequestSpouse(aId, bId) {
+  const a = worldPlayers[aId], b = worldPlayers[bId];
+  if (!a || !b) return false;
+  if (!isRelationBetween(worldRel, aId, bId, 'lover')) return false;
+  if ((a.stats.charm || 0) < 60 || (b.stats.charm || 0) < 60) return false;
+  if (hasSpouse(worldRel, aId) || hasSpouse(worldRel, bId)) return false;
+  return true;
 }
 
 // ---------- Supabase 读写 ----------
@@ -641,6 +681,8 @@ let gender = 'male';
 let currentTab = 'log';
 let me = null;
 let worldList = [];
+let worldRel = [];
+let worldPlayers = {};
 let chatLast = 0;
 let chatLoaded = false;
 let dmPeerId = null;
@@ -867,7 +909,7 @@ function renderWorld() {
       (isMe ? '' : '<div class="p-actions">' +
         '<button class="mini-btn" onclick="sendRelation(\'' + p.id + '\',\'friend\')">🤝朋友</button>' +
         '<button class="mini-btn" onclick="sendRelation(\'' + p.id + '\',\'lover\')">💕恋人</button>' +
-        '<button class="mini-btn" onclick="sendRelation(\'' + p.id + '\',\'spouse\')">💍结婚</button>' +
+        (canRequestSpouse(myId, p.id) ? '<button class="mini-btn" onclick="sendRelation(\'' + p.id + '\',\'spouse\')">💍结婚</button>' : '') +
       '</div>') +
       '</div>';
   }
@@ -915,6 +957,8 @@ async function refreshMe() {
 async function refreshWorld() {
   try {
     const world = await loadWorld();
+    worldRel = world.relations || [];
+    worldPlayers = world.players || {};
     worldList = Object.values(world.players).map(publicPlayer).sort((a, b) => b.lastActive - a.lastActive);
     renderWorld();
     $('worldCount').textContent = '当前世界有 ' + worldList.length + ' 位玩家';
@@ -1026,6 +1070,15 @@ async function sendRelation(targetId, type) {
       if (!REL_TYPES[type]) return { ok: false, msg: '关系类型错误' };
       const exists = world.relations.find((r) => ((r.a === myId && r.b === targetId) || (r.a === targetId && r.b === myId)) && r.type === type);
       if (exists) return { ok: false, msg: '你们已经是' + REL_TYPES[type].name + '了' };
+      if (type === 'spouse') {
+        const isLover = world.relations.some((r) => ((r.a === myId && r.b === targetId) || (r.a === targetId && r.b === myId)) && r.type === 'lover');
+        if (!isLover) return { ok: false, msg: '需先成为恋人才能申请结婚 💕' };
+        if ((p.stats.charm || 0) < 60 || (t.stats.charm || 0) < 60) return { ok: false, msg: '双方魅力都需达到 60 才能申请结婚' };
+        if (world.relations.some((r) => (r.a === myId || r.b === myId) && r.type === 'spouse') ||
+            world.relations.some((r) => (r.a === targetId || r.b === targetId) && r.type === 'spouse')) {
+          return { ok: false, msg: '已婚者不能再次申请结婚 💍' };
+        }
+      }
       const pend = world.requests.find((r) => r.from === myId && r.to === targetId && r.type === type && r.status === 'pending');
       if (pend) return { ok: false, msg: '已发送过请求，等待对方回应' };
       world.requests.push({ id: 'r' + (++world.seq) + '_' + randHex(3), from: myId, to: targetId, type: type, status: 'pending', createdAt: Date.now() });
@@ -1141,11 +1194,24 @@ async function sendChat() {
 }
 
 // ---------- 社交：打开聊天 ----------
-function goChat() {
+async function goChat() {
   if (!myId) return;
-  const tabs = document.querySelectorAll('.tab');
-  for (const t of tabs) { if (t.textContent.indexOf('聊天') >= 0) { switchTab('chat', t); break; } }
-  toast('💬 世界频道发言 +0.5 魅力，结缘后可私聊（私聊 +1 魅力）');
+  try {
+    const d = await withLock(async () => {
+      const world = await loadWorld();
+      const p = getPlayer(world, myId);
+      if (!p) return { ok: false, msg: '角色不存在' };
+      if (p.money < SOCIAL_COST) return { ok: false, msg: '金币不够，社交需要 ' + SOCIAL_COST + ' 金币，先去打工或工作赚金币吧' };
+      p.money -= SOCIAL_COST;
+      await saveWorld(world);
+      return { ok: true };
+    });
+    if (!d.ok) { toast(d.msg || '社交失败'); return; }
+    const tabs = document.querySelectorAll('.tab');
+    for (const t of tabs) { if (t.textContent.indexOf('聊天') >= 0) { switchTab('chat', t); break; } }
+    toast('💬 已花 ' + SOCIAL_COST + ' 金币，发言 +0.5 魅力，结缘后可私聊（私聊 +1 魅力）');
+    refreshMe();
+  } catch (e) { toast('网络错误'); }
 }
 
 // ---------- 私聊 ----------
@@ -1175,6 +1241,30 @@ function closeDm() {
   dmPeerName = null;
   $('dmModal').classList.add('hidden');
 }
+
+async function openStats(peerId) {
+  if (!myId) return;
+  try {
+    const world = await loadWorld();
+    const peer = getPlayer(world, peerId);
+    if (!peer) { toast('对方不存在'); return; }
+    $('statsTitle').textContent = peer.name + ' 的属性';
+    const s = peer.stats;
+    const rows = [
+      ['智力', s.intel, 'var(--blue)'],
+      ['健康', s.health, 'var(--green)'],
+      ['快乐', s.happy, 'var(--accent)'],
+      ['魅力', s.charm, 'var(--purple)'],
+      ['精力', liveEnergy(peer), 'var(--yellow)'],
+    ];
+    $('statsBody').innerHTML = rows.map((r) => '<div class="stat-row"><span class="s-label">' + r[0] + '</span>' +
+      '<div class="bar"><div class="fill" style="width:' + clamp(r[1] || 0, 0, 100) + '%;background:' + r[2] + '"></div></div>' +
+      '<span class="s-val">' + fmtVal(r[1] || 0) + '</span></div>').join('');
+    $('statsModal').classList.remove('hidden');
+  } catch (e) { toast('网络错误'); }
+}
+
+function closeStats() { $('statsModal').classList.add('hidden'); }
 
 function renderDm(messages, append) {
   const box = $('dmBox');

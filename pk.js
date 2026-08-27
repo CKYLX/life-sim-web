@@ -14,7 +14,7 @@ const PK_ATTRS = [
 const PK_WIN_SCORE = 3;      // 先得 3 分者胜
 const PK_MATCH_WAIT = 8000;  // 匹配真人等待时长（毫秒）
 const PK_POLL = 1600;        // pvp 轮询间隔（毫秒）
-const PK_COST = 100;         // 入场费金币
+const PK_COST = 10;         // 入场费金币
 const PK_ENERGY = 15;        // 精力消耗
 
 let pk = null;               // 当前对局对象
