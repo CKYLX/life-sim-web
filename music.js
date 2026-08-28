@@ -1,98 +1,71 @@
 // ============================================================
-//  背景钢琴纯音乐（Web Audio API 合成，无需外部音频文件）
-//  10 首舒缓旋律轮流播放，右上角 🎵 按钮开关
+//  背景音乐：用户本地歌单（26 首，转码后存放于 music/ 目录）
+//  右上角 🎵 按钮开关，轮流循环播放
 // ============================================================
 
-const PIANO_SONGS = [
-  { name: '致爱丽丝', tempo: 72, notes: [[76,1],[75,1],[76,1],[75,1],[76,1],[71,1],[74,1],[72,1],[69,2],[60,1],[64,1],[69,1],[71,2],[64,1],[68,1],[71,2],[72,1],[64,1],[68,1],[72,2],[69,1],[64,1],[68,1],[72,2]] },
-  { name: '欢乐颂', tempo: 70, notes: [[64,1],[64,1],[65,1],[67,1],[67,1],[65,1],[64,1],[62,1],[60,1],[60,1],[62,1],[64,1],[64,1.5],[62,0.5],[62,2]] },
-  { name: '小星星', tempo: 80, notes: [[60,1],[60,1],[67,1],[67,1],[69,1],[69,1],[67,2],[65,1],[65,1],[64,1],[64,1],[62,1],[62,1],[60,2]] },
-  { name: '卡农', tempo: 60, notes: [[64,1],[62,1],[60,1],[62,1],[64,1],[65,1],[67,1],[69,1],[67,1],[65,1],[64,1],[62,1],[60,2],[60,1],[62,1],[64,1],[65,1],[67,1],[69,1],[65,1],[67,2]] },
-  { name: '摇篮曲', tempo: 66, notes: [[60,1],[64,1],[67,1],[64,1],[60,1],[64,1],[67,1],[64,1],[62,1],[65,1],[69,1],[65,1],[62,1],[65,1],[69,1],[65,1],[64,2]] },
-  { name: '天空之城', tempo: 68, notes: [[69,1],[71,1],[72,1],[71,1],[72,1],[76,1],[74,1],[72,1],[67,1],[69,1],[71,2],[67,1],[71,1],[74,1],[72,1],[71,1],[69,1],[67,2]] },
-  { name: '茉莉花', tempo: 72, notes: [[67,1],[69,1],[72,1],[69,1],[67,1],[64,1],[67,1],[69,1],[67,1],[64,1],[62,1],[64,1],[62,1],[60,2]] },
-  { name: '平安夜', tempo: 70, notes: [[67,1.5],[69,0.5],[67,2],[64,3],[67,1.5],[69,0.5],[67,2],[64,3],[74,1],[74,1],[71,2],[72,1],[72,1],[67,3]] },
-  { name: '绿袖子', tempo: 64, notes: [[69,2],[72,1],[74,1],[76,1.5],[77,0.5],[76,1],[74,1],[71,1],[67,1],[69,1],[71,1],[72,2],[69,2]] },
-  { name: '友谊地久天长', tempo: 68, notes: [[67,1],[72,1],[71,1],[72,1],[76,1],[74,1],[72,1],[74,1],[76,1],[72,1],[67,2],[67,1],[72,1],[74,1],[76,1],[74,1],[72,1],[71,2]] },
+const SONGS = [
+  { file: 'music/song_01.ogg', title: 'Adele - Someone Like You' },
+  { file: 'music/song_02.ogg', title: 'Alec Benjamin - Let Me Down Slowly' },
+  { file: 'music/song_03.ogg', title: 'Blue - All Rise' },
+  { file: 'music/song_04.ogg', title: 'Britney Spears - Criminal' },
+  { file: 'music/song_05.ogg', title: 'Camila Cabello & Young Thug - Havana' },
+  { file: 'music/song_06.ogg', title: 'Emily Zeck - Blame It On The Moon' },
+  { file: 'music/song_07.ogg', title: 'Fly By Midnight - Lost Without You' },
+  { file: 'music/song_08.ogg', title: 'Gotye & Kimbra - Somebody That I Used To Know' },
+  { file: 'music/song_09.ogg', title: 'Jewel - Stand' },
+  { file: 'music/song_10.ogg', title: 'Karthik & Shreya Ghoshal - Nee Jathaga' },
+  { file: 'music/song_11.ogg', title: 'Lady Gaga & Beyoncé - Telephone' },
+  { file: 'music/song_12.ogg', title: 'Linkin Park - In the End' },
+  { file: 'music/song_13.ogg', title: 'Linkin Park - Numb' },
+  { file: 'music/song_14.ogg', title: 'Maty Noyes - in my miNd' },
+  { file: 'music/song_15.ogg', title: 'Robinson - Watching You' },
+  { file: 'music/song_16.ogg', title: 'Sarvari - Abv' },
+  { file: 'music/song_17.ogg', title: 'Sundial - 24' },
+  { file: 'music/song_18.ogg', title: 'Taylor Swift - Look What You Made Me Do' },
+  { file: 'music/song_19.ogg', title: '廿四味 & 卫兰 - Wonderland' },
+  { file: 'music/song_20.ogg', title: '深深的蓝 - 還是會想你 (林達浪)' },
+  { file: 'music/song_21.ogg', title: '王菲 - 传奇' },
+  { file: 'music/song_22.ogg', title: '王菲 - 匆匆那年' },
+  { file: 'music/song_23.ogg', title: '习谱予 & 文颖秋 - Let Me Know' },
+  { file: 'music/song_24.ogg', title: '想躲进你的怀里 - 失控 (井迪儿)' },
+  { file: 'music/song_25.ogg', title: '张惠妹 - 人质' },
+  { file: 'music/song_26.ogg', title: '타이비언 & Dia - 배영하는 물고기' },
 ];
 
-let audioCtx = null;
-let masterGain = null;
 let musicOn = false;
-let musicTimer = null;
 let songIndex = 0;
-
-function midiFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+let audioEl = null;
 
 function ensureAudio() {
-  if (!audioCtx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    audioCtx = new AC();
-    masterGain = audioCtx.createGain();
-    masterGain.gain.value = 0.7;
-    masterGain.connect(audioCtx.destination);
-  }
-  return audioCtx;
+  if (audioEl) return audioEl;
+  audioEl = new Audio();
+  audioEl.volume = 0.8;
+  audioEl.preload = 'auto';
+  audioEl.addEventListener('ended', nextSong);
+  audioEl.addEventListener('error', function () { if (musicOn) setTimeout(nextSong, 1500); });
+  return audioEl;
 }
 
-function playPianoNote(ctx, midi, when, dur, vol) {
-  // 主音 + 低八度补厚，模拟柔和钢琴
-  const layers = [[midi, vol], [midi - 12, vol * 0.35]];
-  for (const [m, v] of layers) {
-    const osc = ctx.createOscillator();
-    const g = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = midiFreq(m);
-    g.gain.setValueAtTime(0, when);
-    g.gain.linearRampToValueAtTime(v, when + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0008, when + dur);
-    osc.connect(g);
-    g.connect(masterGain || ctx.destination);
-    osc.start(when);
-    osc.stop(when + dur + 0.1);
-  }
-}
-
-function playPianoSong(ctx, song) {
-  const beat = 60 / song.tempo;
-  let t = ctx.currentTime + 0.15;
-  for (const [midi, beats] of song.notes) {
-    const dur = Math.max(beats * beat * 1.9, 0.18);
-    playPianoNote(ctx, midi, t, dur, 0.14);
-    t += beats * beat;
-  }
-  return Math.max((t - ctx.currentTime) * 1000 + 600, 800);
-}
-
-function scheduleNextSong() {
-  if (!musicOn || !audioCtx) return;
-  const song = PIANO_SONGS[songIndex % PIANO_SONGS.length];
-  const durMs = playPianoSong(audioCtx, song);
+function nextSong() {
+  if (!musicOn) return;
+  const song = SONGS[songIndex % SONGS.length];
   songIndex++;
-  musicTimer = setTimeout(scheduleNextSong, durMs);
+  const a = ensureAudio();
+  a.src = song.file;
+  a.play().catch(function () {});
+  if (typeof toast === 'function') toast('🎵 ' + song.title);
 }
 
 function toggleMusic() {
   const btn = document.getElementById('musicBtn');
   musicOn = !musicOn;
+  const a = ensureAudio();
   if (musicOn) {
-    const ctx = ensureAudio();
-    if (!ctx) { musicOn = false; return; }
-    if (ctx.state === 'suspended') ctx.resume();
-    if (masterGain) {
-      masterGain.gain.cancelScheduledValues(ctx.currentTime);
-      masterGain.gain.setValueAtTime(0.7, ctx.currentTime);
-    }
     if (btn) btn.classList.remove('off');
-    clearTimeout(musicTimer);
-    scheduleNextSong();
+    songIndex = songIndex % SONGS.length;
+    nextSong();
   } else {
     if (btn) btn.classList.add('off');
-    clearTimeout(musicTimer);
-    if (audioCtx && masterGain) {
-      masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-      masterGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-    }
+    if (a) { a.pause(); a.src = ''; }
   }
 }
