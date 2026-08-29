@@ -507,7 +507,7 @@ function milestoneEvents(p, oldAge, newAge) {
   }
 }
 
-function applyAction(p, key, studyCorrect) {
+function applyAction(world, p, key, studyCorrect) {
   const act = ACTIONS_MAP[key];
   if (!act) return { ok: false, msg: '未知动作' };
   if (!p.alive) return { ok: false, msg: '已故，无法行动' };
@@ -535,7 +535,7 @@ function applyAction(p, key, studyCorrect) {
     case 'work': {
       energyCost = 30;
       if (p.age < 18) { addLog(p, '需年满 18 岁才能工作，先「学习」或「打工」吧'); return { ok: false, msg: '需年满 18 岁才能工作' }; }
-      p.money += 100;
+      changeMoney(world, p, 100, '💼 工作收入 +¥100');
       changes.push('收入 +¥100');
       break;
     }
@@ -551,14 +551,14 @@ function applyAction(p, key, studyCorrect) {
     case 'play':
       energyCost = 15;
       if (p.money < 100) { addLog(p, '金币不够，娱乐要花 100 金币'); return { ok: false, msg: '娱乐需要 100 金币，先去「打工」或「工作」赚金币吧' }; }
-      p.money -= 100;
+      changeMoney(world, p, -100, '🎮 娱乐花费 -¥100');
       s.happy = clamp(s.happy + 10, 0, 100);
       changes.push('快乐+' + (s.happy - before.happy) + '（-¥100）');
       break;
     case 'parttime':
       energyCost = 20;
       if (p.age < 16) { addLog(p, '需年满 16 岁才能打工，先「学习」吧'); return { ok: false, msg: '需年满 16 岁才能打工' }; }
-      p.money += 50;
+      changeMoney(world, p, 50, '🧹 打工零花钱 +¥50');
       changes.push('零花钱 +¥50');
       break;
   }
@@ -578,7 +578,7 @@ function applyAction(p, key, studyCorrect) {
 
   let eventText = '';
   const rand = Math.random();
-  if (rand < 0.04) { p.money += 100; eventText = '🍀 意外之财 +¥100！'; }
+  if (rand < 0.04) { changeMoney(world, p, 100, '🍀 意外之财 +¥100'); eventText = '🍀 意外之财 +¥100！'; }
   else if (rand < 0.08) { s.health = clamp(s.health - 10, 0, 100); eventText = '🤒 不小心生病了，健康-10'; }
   else if (rand < 0.12) { s.happy = clamp(s.happy + 8, 0, 100); eventText = '🎉 遇到开心事，快乐+8'; }
   if (eventText) addLog(p, eventText);
@@ -587,8 +587,7 @@ function applyAction(p, key, studyCorrect) {
 
   // 16 岁以前，每长一岁 +500 压岁钱
   if (p.age > oldAge && p.age < 16) {
-    p.money += 500;
-    addLog(p, '🎁 收到压岁钱 +¥500');
+    changeMoney(world, p, 500, '🎁 收到压岁钱 +¥500');
   }
 
   if (p.age >= MAX_AGE) {
@@ -624,6 +623,41 @@ function myRelations(world, pid) {
       const otherP = world.players[otherId];
       return { id: r.id, type: r.type, typeName: REL_TYPES[r.type].name, typeEmoji: REL_TYPES[r.type].emoji, withName: otherP ? otherP.name : '已注销', withId: otherId };
     });
+}
+
+// ---------- 金币共享（恋人/夫妻共同账户） ----------
+// 返回当前玩家的共享金币搭档 id：配偶优先，其次第一个恋人
+function sharedPartnerId(world, pid) {
+  const rels = world.relations || [];
+  const spouse = rels.find((r) => (r.a === pid || r.b === pid) && r.type === 'spouse');
+  if (spouse) return spouse.a === pid ? spouse.b : spouse.a;
+  const lover = rels.find((r) => (r.a === pid || r.b === pid) && r.type === 'lover');
+  if (lover) return lover.a === pid ? lover.b : lover.a;
+  return null;
+}
+
+// 统一金币变动：单人记账；若有共享搭档则同步对方并双方写日志
+function changeMoney(world, p, delta, reason) {
+  p.money = Math.max(0, (p.money || 0) + delta);
+  const pid = sharedPartnerId(world, p.id);
+  const partner = pid ? getPlayer(world, pid) : null;
+  if (partner && partner.id !== p.id) {
+    partner.money = p.money;
+    addLog(p, reason + '（共同金币）');
+    addLog(partner, '伴侣「' + p.name + '」' + reason + '（共同金币）');
+  } else if (reason) {
+    addLog(p, reason);
+  }
+}
+
+// 建立恋人/结婚关系时合并金币为共同账户（双方均无共享搭档时才合并）
+function linkSharedMoney(world, a, b, typeName) {
+  if (sharedPartnerId(world, a.id) || sharedPartnerId(world, b.id)) return;
+  const pool = (a.money || 0) + (b.money || 0);
+  a.money = pool;
+  b.money = pool;
+  addLog(a, '与「' + b.name + '」成为' + typeName + '，金币合并为共同账户 ¥' + pool.toLocaleString() + ' 💰');
+  addLog(b, '与「' + a.name + '」成为' + typeName + '，金币合并为共同账户 ¥' + pool.toLocaleString() + ' 💰');
 }
 
 function isRelationBetween(rels, a, b, type) {
@@ -976,7 +1010,7 @@ async function doAction(key) {
       const world = await loadWorld();
       const p = getPlayer(world, myId);
       if (!p) return { ok: false, msg: '角色不存在' };
-      const r = applyAction(p, key);
+      const r = applyAction(world, p, key);
       if (r.ok) await saveWorld(world);
       return { ok: r.ok, exit: r.exit, msg: r.msg, eventText: r.eventText, player: publicPlayer(p), liveEnergy: liveEnergy(p), log: p.log.slice(0, 20) };
     });
@@ -1043,7 +1077,7 @@ async function submitStudy(choiceIdx) {
       const world = await loadWorld();
       const p = getPlayer(world, myId);
       if (!p) return { ok: false, msg: '角色不存在' };
-      const r = applyAction(p, 'study', correct);
+      const r = applyAction(world, p, 'study', correct);
       if (r.ok) await saveWorld(world);
       return { ok: r.ok, msg: r.msg, eventText: r.eventText, player: publicPlayer(p), liveEnergy: liveEnergy(p), log: p.log.slice(0, 20), correct };
     });
@@ -1104,6 +1138,9 @@ async function respond(requestId, accept) {
       const from = getPlayer(world, rq.from);
       if (accept) {
         rq.status = 'accepted';
+        if (from && (rq.type === 'lover' || rq.type === 'spouse')) {
+          linkSharedMoney(world, from, p, REL_TYPES[rq.type].name);
+        }
         world.relations.push({ id: 'rel' + (++world.seq), a: rq.from, b: rq.to, type: rq.type, createdAt: Date.now() });
         if (from) { from.stats.happy = clamp(from.stats.happy + 10, 0, 100); from.stats.charm = clamp(from.stats.charm + 10, 0, 100); addLog(from, '和「' + p.name + '」结为' + REL_TYPES[rq.type].name + ' 🎉'); }
         p.stats.happy = clamp(p.stats.happy + 10, 0, 100);
@@ -1202,7 +1239,7 @@ async function goChat() {
       const p = getPlayer(world, myId);
       if (!p) return { ok: false, msg: '角色不存在' };
       if (p.money < SOCIAL_COST) return { ok: false, msg: '金币不够，社交需要 ' + SOCIAL_COST + ' 金币，先去打工或工作赚金币吧' };
-      p.money -= SOCIAL_COST;
+      changeMoney(world, p, -SOCIAL_COST, '💬 社交花费 -¥' + SOCIAL_COST);
       await saveWorld(world);
       return { ok: true };
     });

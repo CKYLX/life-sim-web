@@ -43,7 +43,7 @@ async function pkPayEntry() {
       const world = await loadWorld();
       const p = getPlayer(world, myId);
       if (!p) return;
-      p.money = Math.max(0, (p.money || 0) - PK_COST);
+      changeMoney(world, p, -PK_COST, '🎮 娱乐 PK 入场费 -¥' + PK_COST);
       settleEnergy(p);
       p.stats.energy = clamp(p.stats.energy - PK_ENERGY, 0, 100);
       p.energyAt = Date.now();
