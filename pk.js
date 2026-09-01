@@ -12,7 +12,7 @@ const PK_ATTRS = [
   { key: 'charm', name: '魅力', emoji: '✨' },
 ];
 const PK_WIN_SCORE = 3;      // 先得 3 分者胜
-const PK_MATCH_WAIT = 8000;  // 匹配真人等待时长（毫秒）
+const PK_MATCH_WAIT = 60000;  // 匹配真人等待时长（毫秒）
 const PK_POLL = 1600;        // pvp 轮询间隔（毫秒）
 const PK_COST = 10;         // 入场费金币
 const PK_ENERGY = 15;        // 精力消耗
@@ -91,6 +91,10 @@ function pkFreshWaiters(world, excludeId) {
     .map((e) => (typeof e === 'object' ? e.id : e));
 }
 // 从队列移除某个 id（兼容旧的字符串格式）
+// 判断某玩家是否正在某个未结束的 PVP 对局中（幽灵检测）
+function pkIsBusy(world, id) {
+  return Object.values(world.pkMatches || {}).some((m) => m.phase !== 'over' && (m.dealer === id || m.follower === id));
+}
 function pkQueueRemove(world, id) {
   world.pkQueue = (world.pkQueue || []).filter((e) => {
     const eid = e && typeof e === 'object' ? e.id : e;
@@ -145,7 +149,8 @@ function tryMatchPvp() {
           const created = await withLock(async () => {
             if (pkCancelFlag) return null;
             const w = await loadWorld();
-            const oppId = pkFreshWaiters(w, myId)[0];
+            // 只选"空闲"对手：不在其他未结束对局中（防止匹配到已离开/在别的对局里的幽灵玩家）
+            const oppId = pkFreshWaiters(w, myId).find((id) => !pkIsBusy(w, id));
             if (!oppId) return null;
             const exist = Object.values(w.pkMatches || {}).find((m) => (m.dealer === myId || m.follower === myId) && m.phase !== 'over');
             if (exist) return exist;
@@ -614,7 +619,7 @@ function showPkLoading() {
   $('pkOppReport').textContent = '—';
   $('pkMyReport').textContent = '—';
   $('pkLog').innerHTML = '';
-  $('pkActions').innerHTML = '<div class="pk-hint">⏳ 正在寻找真人对手，8 秒后转 AI 对手…</div>' +
+  $('pkActions').innerHTML = '<div class="pk-hint">⏳ 正在寻找真人对手，60 秒后转 AI 对手…</div>' +
     '<div class="pk-btn-row"><button class="pk-btn danger" onclick="cancelPkMatch()">取消</button></div>';
 }
 function showPkModal() {
