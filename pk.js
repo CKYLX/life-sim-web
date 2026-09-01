@@ -16,6 +16,7 @@ const PK_MATCH_WAIT = 8000;  // 匹配真人等待时长（毫秒）
 const PK_POLL = 1600;        // pvp 轮询间隔（毫秒）
 const PK_COST = 10;         // 入场费金币
 const PK_ENERGY = 15;        // 精力消耗
+const PK_TURN_TIMEOUT = 30000; // 对局中该行动方超过 30 秒未动判离线落败
 
 let pk = null;               // 当前对局对象
 let pkMe = null;             // PK 开始时的我方快照 { name, attrs }
@@ -77,6 +78,32 @@ async function startPk() {
   if (matched) startPvp(matched); else startAiPk();
 }
 
+// ---------- 匹配队列工具（带时间戳，8 秒内有效） ----------
+// 取队列中"新鲜"（未过期）的等待者 id 列表，排除 excludeId
+function pkFreshWaiters(world, excludeId) {
+  const now = Date.now();
+  return (world.pkQueue || [])
+    .filter((e) => {
+      const id = e && typeof e === 'object' ? e.id : e;
+      const at = e && typeof e === 'object' ? (e.at || 0) : 0;
+      return id && id !== excludeId && (now - at) < PK_MATCH_WAIT;
+    })
+    .map((e) => (typeof e === 'object' ? e.id : e));
+}
+// 从队列移除某个 id（兼容旧的字符串格式）
+function pkQueueRemove(world, id) {
+  world.pkQueue = (world.pkQueue || []).filter((e) => {
+    const eid = e && typeof e === 'object' ? e.id : e;
+    return eid !== id;
+  });
+}
+// 入队（先清理过期项，再写入带时间戳的新条目）
+function pkQueueJoin(world, id) {
+  const now = Date.now();
+  world.pkQueue = (world.pkQueue || []).filter((e) => e && typeof e === 'object' && e.at && (now - e.at) < PK_MATCH_WAIT);
+  if (!world.pkQueue.some((e) => e && e.id === id)) world.pkQueue.push({ id: id, at: now });
+}
+
 function cancelPkMatch() {
   pkCancelFlag = true;
   $('pkModal').classList.add('hidden');
@@ -84,7 +111,7 @@ function cancelPkMatch() {
     try {
       await withLock(async () => {
         const w = await loadWorld();
-        w.pkQueue = (w.pkQueue || []).filter(id => id !== myId);
+        pkQueueRemove(w, myId);
         await saveWorld(w);
       });
     } catch (e) {}
@@ -100,7 +127,7 @@ function tryMatchPvp() {
         await withLock(async () => {
           const w = await loadWorld();
           if (!Array.isArray(w.pkQueue)) w.pkQueue = [];
-          if (!w.pkQueue.includes(myId)) w.pkQueue.push(myId);
+          pkQueueJoin(w, myId);
           await saveWorld(w);
         });
       } catch (e) {}
@@ -109,20 +136,23 @@ function tryMatchPvp() {
       try {
         const world = await loadWorld();
         const matches = world.pkMatches || {};
-        const mine = Object.values(matches).find(m => (m.dealer === myId || m.follower === myId) && m.phase !== 'over');
+        const now = Date.now();
+        // 只认"新鲜"对局：超过一轮超时时间的旧对局视为已废弃，不再命中
+        const mine = Object.values(matches).find((m) => (m.dealer === myId || m.follower === myId) && m.phase !== 'over' && (now - (m.updatedAt || m.createdAt)) < PK_TURN_TIMEOUT);
         if (mine) { resolve(mine); return; }
-        const others = (world.pkQueue || []).filter(id => id !== myId);
+        const others = pkFreshWaiters(world, myId);
         if (others.length) {
           const created = await withLock(async () => {
             if (pkCancelFlag) return null;
             const w = await loadWorld();
-            const oppId = (w.pkQueue || []).find(id => id !== myId);
+            const oppId = pkFreshWaiters(w, myId)[0];
             if (!oppId) return null;
-            const exist = Object.values(w.pkMatches || {}).find(m => (m.dealer === myId || m.follower === myId) && m.phase !== 'over');
+            const exist = Object.values(w.pkMatches || {}).find((m) => (m.dealer === myId || m.follower === myId) && m.phase !== 'over');
             if (exist) return exist;
             if (myId < oppId) return null; // 由 id 较大者创建，避免双方重复
             const m = createPvpMatch(w, myId, oppId);
-            w.pkQueue = (w.pkQueue || []).filter(id => id !== myId && id !== oppId);
+            pkQueueRemove(w, myId);
+            pkQueueRemove(w, oppId);
             await saveWorld(w);
             return m;
           });
@@ -133,7 +163,7 @@ function tryMatchPvp() {
         try {
           await withLock(async () => {
             const w = await loadWorld();
-            w.pkQueue = (w.pkQueue || []).filter(id => id !== myId);
+            pkQueueRemove(w, myId);
             await saveWorld(w);
           });
         } catch (e) {}
@@ -391,6 +421,28 @@ async function pkPollPvp() {
     const world = await loadWorld();
     const m = (world.pkMatches || {})[pk.matchId];
     if (!m) { toast('对手已离开，PK 结束'); quitPk(true); return; }
+    // 当前行动方超时检测：超过 30 秒未动，判其离线落败
+    const turnId = (m.phase === 'dealer_turn' || m.phase === 'dealer_verify') ? m.dealer : m.follower;
+    if (m.phase !== 'over' && turnId && Date.now() - (m.updatedAt || m.createdAt) > PK_TURN_TIMEOUT) {
+      const winnerId = turnId === m.dealer ? m.follower : m.dealer;
+      await withLock(async () => {
+        const w2 = await loadWorld();
+        const m2 = (w2.pkMatches || {})[pk.matchId];
+        if (m2 && m2.phase !== 'over') {
+          m2.phase = 'over';
+          m2.winner = winnerId;
+          m2.roundResult = { msg: '对方超时未操作，判定离线' };
+          m2.updatedAt = Date.now();
+          await saveWorld(w2);
+        }
+      });
+      pk.phase = 'over';
+      pk.winner = winnerId === myId ? 'me' : 'opp';
+      clearPkTimers();
+      renderPk();
+      settlePkResult(winnerId === myId);
+      return;
+    }
     if (m.phase === 'over') {
       pk.phase = 'over';
       pk.winner = m.winner === myId ? 'me' : 'opp';
