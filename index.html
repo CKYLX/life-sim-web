@@ -988,7 +988,7 @@ function renderRel(relations, incoming) {
       const unread = dmUnreadMap[r.withId] || 0;
       html += '<div class="rel-item"><div class="rel-emoji">' + r.typeEmoji + '</div>' +
         '<div class="p-info"><div class="p-name">' + esc(r.withName) + (unread ? ' <span class="badge">' + (unread > 99 ? '99+' : unread) + '</span>' : '') + '</div><div class="p-sub">' + r.typeName + '</div></div>' +
-        '<div class="p-actions"><button class="mini-btn" onclick="openDm(\'' + r.withId + '\')">💬私聊</button></div></div>';
+        '<div class="p-actions"><button class="mini-btn" onclick="openStats(\'' + r.withId + '\')">🏠空间</button><button class="mini-btn" onclick="openDm(\'' + r.withId + '\')">💬私聊</button></div></div>';
     }
   }
   if (!html) html = '<div class="empty">还没有结缘关系。去「世界」看看其他玩家，发送结缘请求吧～</div>';
