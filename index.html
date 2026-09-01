@@ -103,6 +103,8 @@
   .tab { flex: 1; padding: 11px; text-align: center; border-radius: 10px; background: var(--card); border: 1px solid var(--border); cursor: pointer; font-size: 14px; color: var(--dim); transition: all .15s; }
   .tab.on { background: rgba(255,107,157,.15); border-color: var(--accent); color: var(--text); font-weight: 600; }
   .tab .badge { display: inline-block; background: var(--red); color: #fff; border-radius: 10px; font-size: 11px; padding: 1px 7px; margin-left: 4px; }
+  .tab .badge.dm { background: var(--purple); }
+  .rel-item .badge { display: inline-block; background: var(--red); color: #fff; border-radius: 10px; font-size: 11px; padding: 1px 7px; margin-left: 4px; vertical-align: middle; }
 
   .panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 12px; min-height: 120px; }
   .log-item { padding: 9px 4px; border-bottom: 1px solid rgba(255,255,255,.05); font-size: 13px; line-height: 1.5; }
@@ -293,8 +295,8 @@
   <div class="tabs">
     <div class="tab on" onclick="switchTab('log', this)">📜 日志</div>
     <div class="tab" onclick="switchTab('world', this)">🌍 世界<span class="badge hidden" id="worldBadge"></span></div>
-    <div class="tab" onclick="switchTab('rel', this)">💞 结缘<span class="badge hidden" id="relBadge"></span></div>
-    <div class="tab" onclick="switchTab('chat', this)">💬 聊天</div>
+    <div class="tab" onclick="switchTab('rel', this)">💞 结缘<span class="badge hidden" id="relBadge"></span><span class="badge hidden dm" id="dmBadge"></span></div>
+    <div class="tab" onclick="switchTab('chat', this)">💬 聊天<span class="badge hidden" id="chatBadge"></span></div>
   </div>
 
   <div class="panel" id="panelLog"></div>
@@ -719,10 +721,13 @@ let worldRel = [];
 let worldPlayers = {};
 let chatLast = 0;
 let chatLoaded = false;
+let chatReadAt = 0;        // 世界聊天已读时间戳（未读基线）
 let dmPeerId = null;
 let dmPeerName = null;
 let dmLast = 0;
 let dmLoaded = false;
+let dmReadMap = {};        // { peerId: 已读时间戳 }
+let dmUnreadMap = {};      // { peerId: 未读数 }
 
 // ---------- 工具 ----------
 function $(id) { return document.getElementById(id); }
@@ -853,6 +858,18 @@ function enterGame() {
   timers.push(setInterval(refreshWorld, 5000));
   timers.push(setInterval(refreshChat, 2500));
   timers.push(setInterval(refreshDm, 2500));
+  // 未读基线：登录时把已有消息视为已读，只提醒之后的新消息
+  (async () => {
+    try {
+      const world = await loadWorld();
+      chatReadAt = (world.chat || []).length ? world.chat[world.chat.length - 1].t : Date.now();
+      for (const r of myRelations(world, myId)) {
+        const msgs = (world.dms || []).filter((m) => isDmBetween(m, myId, r.withId));
+        dmReadMap[r.withId] = msgs.length ? msgs[msgs.length - 1].t : Date.now();
+      }
+      updateUnread(world);
+    } catch (e) {}
+  })();
 }
 function clearTimers() {
   timers.forEach(clearInterval);
@@ -865,10 +882,13 @@ function logout() {
   me = null;
   chatLoaded = false;
   chatLast = 0;
+  chatReadAt = 0;
   dmPeerId = null;
   dmPeerName = null;
   dmLast = 0;
   dmLoaded = false;
+  dmReadMap = {};
+  dmUnreadMap = {};
   $('game').classList.add('hidden');
   $('login').classList.remove('hidden');
   refreshWorld();
@@ -965,13 +985,40 @@ function renderRel(relations, incoming) {
   if (relations && relations.length) {
     html += '<div class="section-title">💞 我的关系</div>';
     for (const r of relations) {
+      const unread = dmUnreadMap[r.withId] || 0;
       html += '<div class="rel-item"><div class="rel-emoji">' + r.typeEmoji + '</div>' +
-        '<div class="p-info"><div class="p-name">' + esc(r.withName) + '</div><div class="p-sub">' + r.typeName + '</div></div>' +
+        '<div class="p-info"><div class="p-name">' + esc(r.withName) + (unread ? ' <span class="badge">' + (unread > 99 ? '99+' : unread) + '</span>' : '') + '</div><div class="p-sub">' + r.typeName + '</div></div>' +
         '<div class="p-actions"><button class="mini-btn" onclick="openDm(\'' + r.withId + '\')">💬私聊</button></div></div>';
     }
   }
   if (!html) html = '<div class="empty">还没有结缘关系。去「世界」看看其他玩家，发送结缘请求吧～</div>';
   $('panelRel').innerHTML = html;
+}
+
+// ---------- 未读提醒 ----------
+function setBadge(id, n) {
+  const el = $(id);
+  if (!el) return;
+  el.classList.toggle('hidden', !n);
+  el.textContent = n > 99 ? '99+' : String(n);
+}
+
+function updateUnread(world) {
+  if (!myId) return;
+  // 世界频道未读（别人发的、时间晚于已读基线）
+  const chatUnread = (world.chat || []).filter((m) => m.from !== myId && m.t > chatReadAt).length;
+  setBadge('chatBadge', chatUnread);
+  // 私聊未读（按结缘对象统计对方发给我的消息）
+  const rels = myRelations(world, myId);
+  const perPeer = {};
+  let total = 0;
+  for (const r of rels) {
+    const n = (world.dms || []).filter((m) => m.from === r.withId && m.to === myId && m.t > (dmReadMap[r.withId] || 0)).length;
+    perPeer[r.withId] = n;
+    total += n;
+  }
+  dmUnreadMap = perPeer;
+  setBadge('dmBadge', total);
 }
 
 // ---------- 数据刷新 ----------
@@ -1191,6 +1238,7 @@ async function refreshChat() {
   if (!myId) return;
   try {
     const world = await loadWorld();
+    updateUnread(world);
     const after = chatLast;
     const msgs = (world.chat || []).filter((m) => m.t > after);
     if (msgs.length) {
@@ -1200,6 +1248,11 @@ async function refreshChat() {
       renderChat([], false);
     }
     chatLoaded = true;
+    // 正在看聊天 Tab 时视为已读，清空世界红点
+    if (currentTab === 'chat' && (world.chat || []).length) {
+      chatReadAt = world.chat[world.chat.length - 1].t;
+      setBadge('chatBadge', 0);
+    }
   } catch (e) {}
 }
 
@@ -1326,6 +1379,7 @@ async function refreshDm() {
   if (!myId || !dmPeerId) return;
   try {
     const world = await loadWorld();
+    updateUnread(world);
     const msgs = (world.dms || []).filter((m) => isDmBetween(m, myId, dmPeerId) && m.t > dmLast);
     if (msgs.length) {
       renderDm(msgs.slice(-100), dmLoaded);
@@ -1334,6 +1388,12 @@ async function refreshDm() {
       renderDm([], false);
     }
     dmLoaded = true;
+    // 正在看私聊弹窗时视为已读，清空该对象红点
+    const all = (world.dms || []).filter((m) => isDmBetween(m, myId, dmPeerId));
+    if (all.length) {
+      dmReadMap[dmPeerId] = all[all.length - 1].t;
+      dmUnreadMap[dmPeerId] = 0;
+    }
   } catch (e) {}
 }
 
