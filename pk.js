@@ -468,7 +468,7 @@ async function pkPollPvp() {
       oppReport: iAmDealer ? m.round.followerReport : m.round.dealerReport,
       myVerify: iAmDealer ? m.round.dealerVerify : m.round.followerVerify,
       oppVerify: iAmDealer ? m.round.followerVerify : m.round.dealerVerify,
-    } : null;
+    } : (pk.round || { attr: null, myReport: null, oppReport: null, myVerify: false, oppVerify: false });
     if (m.roundResult && m.roundResult.msg && pk._lastRoundMsg !== m.roundResult.msg + m.updatedAt) {
       pk._lastRoundMsg = m.roundResult.msg + m.updatedAt;
       pk.logs.unshift(m.roundResult.msg);
@@ -668,6 +668,7 @@ function renderDealerUI() {
 
 function pkPickAttr(key) {
   if (!pk) return;
+  if (!pk.round) pk.round = { attr: null, myReport: null, oppReport: null, myVerify: false, oppVerify: false };
   const myReal = pk.me.attrs[key];
   pk.round.attr = key;
   $('pkAttrRow').textContent = '你是庄家：报出你的' + pkAttrName(key) + '（真实值 ' + myReal + '，可虚报）';
