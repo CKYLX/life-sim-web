@@ -202,6 +202,12 @@ function createPvpMatch(w, a, b) {
     roundResult: null,
     phase: 'dealer_turn',
     winner: null,
+    roundNum: 0,
+    stage: 1,
+    dealerHand: ['intel', 'health', 'happy', 'charm'],
+    followerHand: ['intel', 'health', 'happy', 'charm'],
+    dealerStolen: [],
+    followerStolen: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -229,6 +235,8 @@ function startAiPk() {
     round: null,
     phase: 'dealer_turn',
     winner: null,
+    stage: 1,
+    roundNum: 0,
     logs: [],
   };
   pkPayEntry();
@@ -377,7 +385,7 @@ function applyAiResult(gameWinner, pointWinner) {
     pk.winner = gameWinner;
     pk.phase = 'over';
     renderPk();
-    settlePkResult(pk.winner === 'me');
+    settlePkResult(pk.winner === 'me' ? 'win' : 'lose');
     return;
   }
   if (pointWinner === 'me') pk.myScore++;
@@ -386,10 +394,11 @@ function applyAiResult(gameWinner, pointWinner) {
     pk.winner = pk.myScore >= PK_WIN_SCORE ? 'me' : 'opp';
     pk.phase = 'over';
     renderPk();
-    settlePkResult(pk.winner === 'me');
+    settlePkResult(pk.winner === 'me' ? 'win' : 'lose');
     return;
   }
   pk.iAmDealer = !pk.iAmDealer;
+  pk.roundNum = (pk.roundNum || 0) + 1;
   nextRound();
 }
 
@@ -409,6 +418,10 @@ function startPvp(match) {
     round: null,
     phase: 'dealer_turn',
     winner: null,
+    stage: match.stage || 1,
+    roundNum: match.roundNum || 0,
+    hand: iAmDealer ? (match.dealerHand || PK_ATTRS.map(a => a.key)) : (match.followerHand || PK_ATTRS.map(a => a.key)),
+    stolen: iAmDealer ? (match.dealerStolen || []) : (match.followerStolen || []),
     logs: [],
     _uiPhase: '',
     _lastRoundMsg: '',
@@ -445,15 +458,15 @@ async function pkPollPvp() {
       pk.winner = winnerId === myId ? 'me' : 'opp';
       clearPkTimers();
       renderPk();
-      settlePkResult(winnerId === myId);
+      settlePkResult(winnerId === myId ? 'win' : 'lose');
       return;
     }
     if (m.phase === 'over') {
       pk.phase = 'over';
-      pk.winner = m.winner === myId ? 'me' : 'opp';
+      pk.winner = m.winner == null ? 'draw' : (m.winner === myId ? 'me' : 'opp');
       clearPkTimers();
       renderPk();
-      settlePkResult(pk.winner === 'me');
+      settlePkResult(pk.winner === 'me' ? 'win' : (pk.winner === 'opp' ? 'lose' : 'draw'));
       return;
     }
     const iAmDealer = m.dealer === myId;
@@ -462,13 +475,18 @@ async function pkPollPvp() {
     pk.oppScore = iAmDealer ? m.followerScore : m.dealerScore;
     pk.myVerifyLeft = iAmDealer ? m.dealerVerifyLeft : m.followerVerifyLeft;
     pk.oppVerifyLeft = iAmDealer ? m.followerVerifyLeft : m.dealerVerifyLeft;
+    pk.stage = m.stage || 1;
+    pk.roundNum = m.roundNum || 0;
+    pk.hand = iAmDealer ? (m.dealerHand || PK_ATTRS.map(a => a.key)) : (m.followerHand || PK_ATTRS.map(a => a.key));
+    pk.stolen = iAmDealer ? (m.dealerStolen || []) : (m.followerStolen || []);
     pk.round = m.round ? {
       attr: m.round.attr,
+      followerAttr: m.round.followerAttr,
       myReport: iAmDealer ? m.round.dealerReport : m.round.followerReport,
       oppReport: iAmDealer ? m.round.followerReport : m.round.dealerReport,
       myVerify: iAmDealer ? m.round.dealerVerify : m.round.followerVerify,
       oppVerify: iAmDealer ? m.round.followerVerify : m.round.dealerVerify,
-    } : (pk.round || { attr: null, myReport: null, oppReport: null, myVerify: false, oppVerify: false });
+    } : (pk.round || { attr: null, followerAttr: null, myReport: null, oppReport: null, myVerify: false, oppVerify: false });
     if (m.roundResult && m.roundResult.msg && pk._lastRoundMsg !== m.roundResult.msg + m.updatedAt) {
       pk._lastRoundMsg = m.roundResult.msg + m.updatedAt;
       pk.logs.unshift(m.roundResult.msg);
@@ -484,11 +502,36 @@ async function pkPollPvp() {
   } catch (e) {}
 }
 
+// ---------- 第二阶段抽牌 ----------
+function pkSteal(m) {
+  let parts = [];
+  if (m.followerHand && m.followerHand.length) {
+    const idx = Math.floor(Math.random() * m.followerHand.length);
+    const stolen = m.followerHand.splice(idx, 1)[0];
+    if (!m.dealerHand) m.dealerHand = [];
+    m.dealerHand.push(stolen);
+    if (!m.dealerStolen) m.dealerStolen = [];
+    m.dealerStolen.push(stolen);
+    parts.push('庄家「' + m.dealerName + '」抽走后家「' + m.followerName + '」的' + pkAttrEmoji(stolen) + pkAttrName(stolen) + '牌');
+  }
+  if (m.dealerHand && m.dealerHand.length) {
+    const idx = Math.floor(Math.random() * m.dealerHand.length);
+    const stolen = m.dealerHand.splice(idx, 1)[0];
+    if (!m.followerHand) m.followerHand = [];
+    m.followerHand.push(stolen);
+    if (!m.followerStolen) m.followerStolen = [];
+    m.followerStolen.push(stolen);
+    parts.push('后家「' + m.followerName + '」抽走庄家「' + m.dealerName + '」的' + pkAttrEmoji(stolen) + pkAttrName(stolen) + '牌');
+  }
+  return parts.length ? '🎴 ' + parts.join('，') : '';
+}
+
 function resolvePvp(m) {
   const r = m.round;
-  const attr = r.attr;
-  const dealerReal = m.dealerAttrs[attr];
-  const followerReal = m.followerAttrs[attr];
+  const dealerAttr = r.attr;
+  const followerAttr = r.followerAttr != null ? r.followerAttr : r.attr;
+  const dealerReal = m.dealerAttrs[dealerAttr];
+  const followerReal = m.followerAttrs[followerAttr];
   const dealerBluff = r.dealerReport !== dealerReal;
   const followerBluff = r.followerReport !== followerReal;
   let pointTo = null, gameTo = null, msg = '';
@@ -508,19 +551,45 @@ function resolvePvp(m) {
   } else {
     if (pointTo === 'dealer') m.dealerScore++;
     else if (pointTo === 'follower') m.followerScore++;
-    if (m.dealerScore >= PK_WIN_SCORE || m.followerScore >= PK_WIN_SCORE) {
-      m.winner = m.dealerScore >= PK_WIN_SCORE ? m.dealer : m.follower;
-      m.phase = 'over';
+    m.roundNum = (m.roundNum || 0) + 1;
+    let over = false;
+    if ((m.stage || 1) === 1) {
+      if (m.dealerScore >= PK_WIN_SCORE || m.followerScore >= PK_WIN_SCORE) {
+        m.winner = m.dealerScore >= PK_WIN_SCORE ? m.dealer : m.follower;
+        m.phase = 'over';
+        over = true;
+      } else if (m.roundNum >= 3) {
+        m.stage = 2;
+      }
     } else {
+      if (m.roundNum >= 6) {
+        if (m.dealerScore > m.followerScore) m.winner = m.dealer;
+        else if (m.followerScore > m.dealerScore) m.winner = m.follower;
+        else m.winner = null;
+        m.phase = 'over';
+        over = true;
+        msg = (m.winner == null)
+          ? '第二阶段 3 局结束，双方平分，平局！'
+          : '第二阶段 3 局结束，总比分 ' + m.dealerScore + ':' + m.followerScore + '，' + (m.winner === m.dealer ? m.dealerName : m.followerName) + ' 胜！';
+      }
+    }
+    if (!over) {
       // 轮换庄家/后家
       const oDealer = m.dealer, oDealerAttrs = m.dealerAttrs, oDealerScore = m.dealerScore, oDealerName = m.dealerName, oDealerV = m.dealerVerifyLeft;
+      const oDealerHand = m.dealerHand, oDealerStolen = m.dealerStolen;
       m.dealer = m.follower; m.follower = oDealer;
       m.dealerAttrs = m.followerAttrs; m.followerAttrs = oDealerAttrs;
       m.dealerScore = m.followerScore; m.followerScore = oDealerScore;
       m.dealerName = m.followerName; m.followerName = oDealerName;
       m.dealerVerifyLeft = m.followerVerifyLeft; m.followerVerifyLeft = oDealerV;
+      m.dealerHand = m.followerHand; m.followerHand = oDealerHand;
+      m.dealerStolen = m.followerStolen; m.followerStolen = oDealerStolen;
       m.round = null;
       m.phase = 'dealer_turn';
+      if (m.stage === 2 && m.roundNum === 3) {
+        const stealMsg = pkSteal(m);
+        if (stealMsg) msg += ' ' + stealMsg;
+      }
     }
   }
   m.roundResult = { msg };
@@ -553,6 +622,7 @@ async function followerSubmitPvp(verify, report) {
       if (!m || m.phase !== 'follower_turn' || m.follower !== myId) return;
       m.round.followerReport = report;
       m.round.followerVerify = verify;
+      m.round.followerAttr = (pk.round && pk.round.followerAttr) ? pk.round.followerAttr : m.round.attr;
       if (verify) {
         if (m.followerVerifyLeft <= 0) return;
         m.followerVerifyLeft--;
@@ -587,17 +657,19 @@ async function dealerVerifySubmitPvp(verify) {
 }
 
 // ---------- 结算 ----------
-async function settlePkResult(iWon) {
+async function settlePkResult(outcome) {
+  const delta = outcome === 'win' ? 10 : (outcome === 'lose' ? -10 : 0);
+  const logMsg = outcome === 'win' ? '🏆 娱乐 PK 获胜，魅力+10' : (outcome === 'lose' ? '😞 娱乐 PK 落败，魅力-10' : '🤝 娱乐 PK 平局，魅力不变');
   try {
     await withLock(async () => {
       const world = await loadWorld();
       const p = getPlayer(world, myId);
       if (p) {
-        p.stats.charm = clamp((p.stats.charm || 0) + (iWon ? 10 : -10), 0, 100);
+        p.stats.charm = clamp((p.stats.charm || 0) + delta, 0, 100);
         p.actionCount = (p.actionCount || 0) + 1;
         p.age = clamp(Math.floor(p.actionCount / ACTIONS_PER_YEAR), 0, MAX_AGE);
         p.lastActive = Date.now();
-        addLog(p, iWon ? '🏆 娱乐 PK 获胜，魅力+10' : '😞 娱乐 PK 落败，魅力-10');
+        addLog(p, logMsg);
         await saveWorld(world);
       }
     });
@@ -637,9 +709,10 @@ function renderPk() {
   $('pkMyTag').className = 'pk-score-tag ' + (pk.iAmDealer ? 'dealer' : 'follower');
   $('pkOppTag').className = 'pk-score-tag ' + (pk.iAmDealer ? 'follower' : 'dealer');
   if (pk.round && pk.round.attr) {
-    $('pkAttrRow').textContent = '本回合属性：' + pkAttrEmoji(pk.round.attr) + ' ' + pkAttrName(pk.round.attr);
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 属性：' + pkAttrEmoji(pk.round.attr) + ' ' + pkAttrName(pk.round.attr);
   } else {
-    $('pkAttrRow').textContent = pk.iAmDealer ? '轮到你选属性…' : '等待庄家选属性…';
+    const stageTxt = pk.stage === 2 ? '第二阶段（再比3局，大者胜）' : '第一阶段（先得3分胜）';
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · ' + (pk.iAmDealer ? '轮到你选属性…' : '等待庄家选属性…') + ' · ' + stageTxt;
   }
   $('pkOppReport').textContent = (pk.round && pk.round.oppReport != null) ? pk.round.oppReport : '—';
   $('pkMyReport').textContent = (pk.round && pk.round.myReport != null) ? pk.round.myReport : '—';
@@ -648,19 +721,35 @@ function renderPk() {
   $('pkLog').innerHTML = lh || '<div class="pk-log-item">PK 开始，先得 3 分者胜！赢 +10 魅力，输 -10 魅力</div>';
   if (pk.phase === 'over') {
     const won = pk.winner === 'me';
+    const draw = pk.winner === 'draw';
+    const cls = draw ? '' : (won ? 'win' : 'lose');
+    const txt = draw ? '🤝 平局，魅力不变' : (won ? '🏆 你赢了！魅力 +10' : '😞 你输了，魅力 -10');
     $('pkActions').innerHTML =
-      '<div class="pk-result ' + (won ? 'win' : 'lose') + '">' + (won ? '🏆 你赢了！魅力 +10' : '😞 你输了，魅力 -10') + '</div>' +
+      '<div class="pk-result ' + cls + '">' + txt + '</div>' +
       '<button class="pk-btn" onclick="closePk()">确定</button>';
   }
 }
 
 function renderDealerUI() {
+  if (pk.stage === 2) {
+    let btns = '';
+    for (const key of (pk.hand || [])) {
+      const v = pk.me.attrs[key];
+      const stolen = (pk.stolen || []).includes(key);
+      btns += '<button class="pk-attr-btn" onclick="pkPickAttr(\'' + key + '\')">' + pkAttrEmoji(key) + ' ' + pkAttrName(key) + '<span class="pk-attr-val">' + v + (stolen ? ' 🎴' : '') + '</span></button>';
+    }
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 第二阶段：你是庄家，从手牌选一张出（🎴为抽来的牌，不能虚报）';
+    $('pkActions').innerHTML =
+      '<div class="pk-hint">选择要出的牌</div>' +
+      '<div class="pk-attr-grid">' + btns + '</div>';
+    return;
+  }
   let btns = '';
   for (const a of PK_ATTRS) {
     const v = pk.me.attrs[a.key];
     btns += '<button class="pk-attr-btn" onclick="pkPickAttr(\'' + a.key + '\')">' + a.emoji + ' ' + a.name + '<span class="pk-attr-val">' + v + '</span></button>';
   }
-  $('pkAttrRow').textContent = '你是庄家：选一个属性出牌';
+  $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 你是庄家：选一个属性出牌';
   $('pkActions').innerHTML =
     '<div class="pk-hint">选择要出的属性（数值是你的真实点数，之后可虚报）</div>' +
     '<div class="pk-attr-grid">' + btns + '</div>';
@@ -668,19 +757,30 @@ function renderDealerUI() {
 
 function pkPickAttr(key) {
   if (!pk) return;
-  if (!pk.round) pk.round = { attr: null, myReport: null, oppReport: null, myVerify: false, oppVerify: false };
+  if (!pk.round) pk.round = { attr: null, followerAttr: null, myReport: null, oppReport: null, myVerify: false, oppVerify: false };
   const myReal = pk.me.attrs[key];
   pk.round.attr = key;
-  $('pkAttrRow').textContent = '你是庄家：报出你的' + pkAttrName(key) + '（真实值 ' + myReal + '，可虚报）';
-  $('pkActions').innerHTML =
-    '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input"></div>' +
-    '<div class="pk-btn-row"><button class="pk-btn" onclick="pkDealerConfirm()">出牌</button></div>';
+  const isStolen = (pk.stolen || []).includes(key);
+  if (isStolen) {
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 出 ' + pkAttrName(key) + '（抽来的牌，真实值 ' + myReal + '，不能虚报）';
+    $('pkActions').innerHTML =
+      '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input" disabled></div>' +
+      '<div class="pk-btn-row"><button class="pk-btn" onclick="pkDealerConfirm()">出牌</button></div>';
+  } else {
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 你是庄家：报出你的' + pkAttrName(key) + '（真实值 ' + myReal + '，可虚报）';
+    $('pkActions').innerHTML =
+      '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input"></div>' +
+      '<div class="pk-btn-row"><button class="pk-btn" onclick="pkDealerConfirm()">出牌</button></div>';
+  }
 }
 
 function pkDealerConfirm() {
   if (!pk) return;
-  const reportVal = clamp(parseInt(($('pkReportInput') ? $('pkReportInput').value : 0)) || 0, 0, 100);
   const key = pk.round.attr;
+  const isStolen = (pk.stolen || []).includes(key);
+  const inputEl = $('pkReportInput');
+  const rawVal = (inputEl && !inputEl.disabled) ? inputEl.value : pk.me.attrs[key];
+  const reportVal = isStolen ? pk.me.attrs[key] : clamp(parseInt(rawVal) || 0, 0, 100);
   if (pk.mode === 'ai') {
     pk.round.myReport = reportVal;
     pk.logs.unshift('你（庄家）出 ' + pkAttrName(key) + '，报点 ' + reportVal);
@@ -698,10 +798,26 @@ function pkDealerConfirm() {
 }
 
 function renderFollowerUI() {
+  if (pk.stage === 2) {
+    const oppReport = pk.round.oppReport;
+    const canVerify = pk.myVerifyLeft > 0;
+    let btns = '';
+    for (const key of (pk.hand || [])) {
+      const v = pk.me.attrs[key];
+      const stolen = (pk.stolen || []).includes(key);
+      btns += '<button class="pk-attr-btn" onclick="pkFollowerPick(\'' + key + '\')">' + pkAttrEmoji(key) + ' ' + pkAttrName(key) + '<span class="pk-attr-val">' + v + (stolen ? ' 🎴' : '') + '</span></button>';
+    }
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 第二阶段：对手报点 ' + oppReport + '，从手牌选一张出';
+    $('pkActions').innerHTML =
+      '<div class="pk-hint">你的手牌（🎴为抽来的牌，不能虚报）</div>' +
+      '<div class="pk-attr-grid">' + btns + '</div>' +
+      '<div class="pk-btn-row"><button class="pk-btn danger" ' + (canVerify ? '' : 'disabled') + ' onclick="pkFollowerConfirm(true)">查验对手' + (canVerify ? '' : '（已用）') + '</button></div>';
+    return;
+  }
   const attr = pk.round.attr;
   const myReal = pk.me.attrs[attr];
   const oppReport = pk.round.oppReport;
-  $('pkAttrRow').textContent = '本回合属性：' + pkAttrEmoji(attr) + ' ' + pkAttrName(attr) + '，对手报点 ' + oppReport;
+  $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 属性：' + pkAttrEmoji(attr) + ' ' + pkAttrName(attr) + '，对手报点 ' + oppReport;
   const canVerify = pk.myVerifyLeft > 0;
   $('pkActions').innerHTML =
     '<div class="pk-hint">你是后家，你的真实' + pkAttrName(attr) + '：<b>' + myReal + '</b>（可虚报）</div>' +
@@ -712,17 +828,48 @@ function renderFollowerUI() {
     '</div>';
 }
 
+function pkFollowerPick(key) {
+  if (!pk) return;
+  pk.round.followerAttr = key;
+  const myReal = pk.me.attrs[key];
+  const isStolen = (pk.stolen || []).includes(key);
+  if (isStolen) {
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 出 ' + pkAttrName(key) + '（抽来的牌，真实值 ' + myReal + '，不能虚报）';
+    $('pkActions').innerHTML =
+      '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input" disabled></div>' +
+      '<div class="pk-btn-row"><button class="pk-btn" onclick="pkFollowerConfirm(false)">出牌</button></div>';
+  } else {
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 报出你的' + pkAttrName(key) + '（真实值 ' + myReal + '，可虚报）';
+    $('pkActions').innerHTML =
+      '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input"></div>' +
+      '<div class="pk-btn-row"><button class="pk-btn" onclick="pkFollowerConfirm(false)">出牌</button></div>';
+  }
+}
+
 function pkFollowerConfirm(verify) {
   if (!pk) return;
-  const reportVal = clamp(parseInt(($('pkReportInput') ? $('pkReportInput').value : 0)) || 0, 0, 100);
+  const key = pk.round.followerAttr != null ? pk.round.followerAttr : pk.round.attr;
+  const isStolen = (pk.stolen || []).includes(key);
+  const inputEl = $('pkReportInput');
+  const rawVal = (inputEl && !inputEl.disabled) ? inputEl.value : pk.me.attrs[key];
+  const reportVal = isStolen ? pk.me.attrs[key] : clamp(parseInt(rawVal) || 0, 0, 100);
   if (pk.mode === 'ai') aiFollowerSubmit(verify, reportVal);
   else followerSubmitPvp(verify, reportVal);
 }
 
 function renderDealerVerifyUI() {
-  const attr = pk.round.attr;
   const oppReport = pk.round.oppReport;
   const canVerify = pk.myVerifyLeft > 0;
+  if (pk.stage === 2) {
+    $('pkActions').innerHTML =
+      '<div class="pk-hint">对方（后家）出牌报点 <b>' + oppReport + '</b></div>' +
+      '<div class="pk-btn-row">' +
+      '<button class="pk-btn" onclick="pkDealerVerifyConfirm(false)">相信对方</button>' +
+      '<button class="pk-btn danger" ' + (canVerify ? '' : 'disabled') + ' onclick="pkDealerVerifyConfirm(true)">查验' + (canVerify ? '' : '（已用）') + '</button>' +
+      '</div>';
+    return;
+  }
+  const attr = pk.round.attr;
   $('pkActions').innerHTML =
     '<div class="pk-hint">对方（后家）报点 <b>' + oppReport + '</b>，你的真实' + pkAttrName(attr) + '：<b>' + pk.me.attrs[attr] + '</b></div>' +
     '<div class="pk-btn-row">' +
@@ -774,7 +921,7 @@ function quitPk(force) {
         } catch (e) {}
       })();
     }
-    settlePkResult(false);
+    settlePkResult('lose');
   }
   clearPkTimers();
   pk = null;
