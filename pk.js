@@ -800,7 +800,6 @@ function pkDealerConfirm() {
 function renderFollowerUI() {
   if (pk.stage === 2) {
     const oppReport = pk.round.oppReport;
-    const canVerify = pk.myVerifyLeft > 0;
     let btns = '';
     for (const key of (pk.hand || [])) {
       const v = pk.me.attrs[key];
@@ -810,8 +809,7 @@ function renderFollowerUI() {
     $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 第二阶段：对手报点 ' + oppReport + '，从手牌选一张出';
     $('pkActions').innerHTML =
       '<div class="pk-hint">你的手牌（🎴为抽来的牌，不能虚报）</div>' +
-      '<div class="pk-attr-grid">' + btns + '</div>' +
-      '<div class="pk-btn-row"><button class="pk-btn danger" ' + (canVerify ? '' : 'disabled') + ' onclick="pkFollowerConfirm(true)">查验对手' + (canVerify ? '' : '（已用）') + '</button></div>';
+      '<div class="pk-attr-grid">' + btns + '</div>';
     return;
   }
   const attr = pk.round.attr;
@@ -833,17 +831,19 @@ function pkFollowerPick(key) {
   pk.round.followerAttr = key;
   const myReal = pk.me.attrs[key];
   const isStolen = (pk.stolen || []).includes(key);
-  if (isStolen) {
-    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 出 ' + pkAttrName(key) + '（抽来的牌，真实值 ' + myReal + '，不能虚报）';
-    $('pkActions').innerHTML =
-      '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input" disabled></div>' +
-      '<div class="pk-btn-row"><button class="pk-btn" onclick="pkFollowerConfirm(false)">出牌</button></div>';
-  } else {
-    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 报出你的' + pkAttrName(key) + '（真实值 ' + myReal + '，可虚报）';
-    $('pkActions').innerHTML =
-      '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input"></div>' +
-      '<div class="pk-btn-row"><button class="pk-btn" onclick="pkFollowerConfirm(false)">出牌</button></div>';
-  }
+  const canVerify = pk.myVerifyLeft > 0;
+  const inputHtml = isStolen
+    ? '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input" disabled></div>'
+    : '<div class="pk-input-row"><input type="number" id="pkReportInput" min="0" max="100" value="' + myReal + '" class="pk-input"></div>';
+  $('pkAttrRow').textContent = isStolen
+    ? '第' + (pk.roundNum + 1) + '局 · 出 ' + pkAttrName(key) + '（抽来的牌，真实值 ' + myReal + '，不能虚报）'
+    : '第' + (pk.roundNum + 1) + '局 · 报出你的' + pkAttrName(key) + '（真实值 ' + myReal + '，可虚报）';
+  $('pkActions').innerHTML =
+    inputHtml +
+    '<div class="pk-btn-row">' +
+    '<button class="pk-btn" onclick="pkFollowerConfirm(false)">出牌</button>' +
+    '<button class="pk-btn danger" ' + (canVerify ? '' : 'disabled') + ' onclick="pkFollowerConfirm(true)">查验对手' + (canVerify ? '' : '（已用）') + '</button>' +
+    '</div>';
 }
 
 function pkFollowerConfirm(verify) {
