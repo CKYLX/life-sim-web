@@ -438,7 +438,12 @@ async function pkPollPvp() {
   try {
     const world = await loadWorld();
     const m = (world.pkMatches || {})[pk.matchId];
-    if (!m) { toast('对手已离开，PK 结束'); quitPk(true); return; }
+    if (!m) {
+      pk._missCount = (pk._missCount || 0) + 1;
+      if (pk._missCount >= 3) { toast('对手已离开，PK 结束'); quitPk(true); }
+      return;
+    }
+    pk._missCount = 0;
     // 当前行动方超时检测：超过 30 秒未动，判其离线落败
     const turnId = (m.phase === 'dealer_turn' || m.phase === 'dealer_verify') ? m.dealer : m.follower;
     if (m.phase !== 'over' && turnId && Date.now() - (m.updatedAt || m.createdAt) > PK_TURN_TIMEOUT) {
@@ -492,8 +497,9 @@ async function pkPollPvp() {
       pk.logs.unshift(m.roundResult.msg);
     }
     renderPk();
-    if (pk._uiPhase !== m.phase) {
-      pk._uiPhase = m.phase;
+    const uiKey = m.phase + (iAmDealer ? '_d' : '_f');
+    if (pk._uiPhase !== uiKey) {
+      pk._uiPhase = uiKey;
       if (m.phase === 'dealer_turn' && iAmDealer) renderDealerUI();
       else if (m.phase === 'follower_turn' && !iAmDealer) renderFollowerUI();
       else if (m.phase === 'dealer_verify' && iAmDealer) renderDealerVerifyUI();
