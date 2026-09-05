@@ -11,7 +11,7 @@ const PK_ATTRS = [
   { key: 'happy', name: '快乐', emoji: '😊' },
   { key: 'charm', name: '魅力', emoji: '✨' },
 ];
-const PK_WIN_SCORE = 3;      // 先得 3 分者胜
+const PK_WIN_SCORE = 2;      // 先得 2 分者胜
 const PK_MATCH_WAIT = 60000;  // 匹配真人等待时长（毫秒）
 const PK_POLL = 1600;        // pvp 轮询间隔（毫秒）
 const PK_COST = 10;         // 入场费金币
@@ -204,6 +204,8 @@ function createPvpMatch(w, a, b) {
     winner: null,
     roundNum: 0,
     stage: 1,
+    stealTurn: 'follower',
+    stealLog: '',
     dealerHand: ['intel', 'health', 'happy', 'charm'],
     followerHand: ['intel', 'health', 'happy', 'charm'],
     dealerStolen: [],
@@ -237,6 +239,10 @@ function startAiPk() {
     winner: null,
     stage: 1,
     roundNum: 0,
+    stealTurn: 'follower',
+    stealLog: '',
+    hand: PK_ATTRS.map(a => a.key),
+    stolen: [],
     logs: [],
   };
   pkPayEntry();
@@ -390,6 +396,7 @@ function applyAiResult(gameWinner, pointWinner) {
   }
   if (pointWinner === 'me') pk.myScore++;
   else if (pointWinner === 'opp') pk.oppScore++;
+  pk.roundNum = (pk.roundNum || 0) + 1;
   if (pk.myScore >= PK_WIN_SCORE || pk.oppScore >= PK_WIN_SCORE) {
     pk.winner = pk.myScore >= PK_WIN_SCORE ? 'me' : 'opp';
     pk.phase = 'over';
@@ -397,9 +404,52 @@ function applyAiResult(gameWinner, pointWinner) {
     settlePkResult(pk.winner === 'me' ? 'win' : 'lose');
     return;
   }
-  pk.iAmDealer = !pk.iAmDealer;
-  pk.roundNum = (pk.roundNum || 0) + 1;
+  if (pk.roundNum >= 3) {
+    pk.stage = 2;
+    pk.phase = 'steal';
+    aiStealPhase();
+    return;
+  }
   nextRound();
+}
+
+// AI 对战抽牌（本地模拟）：后家先抽，谁先比对方多 2 张牌赢
+function aiStealPhase() {
+  let myHand = PK_ATTRS.map(a => a.key);
+  let oppHand = PK_ATTRS.map(a => a.key);
+  const myAttrs = pk.me.attrs;
+  const oppAttrs = pk.opp.attrs;
+  let myTurn = !pk.iAmDealer;  // 后家先抽
+  let guard = 0;
+  let result = null;
+  pk.logs.unshift('🎴 进入抽牌阶段：后家先抽，谁先比对方多 2 张牌谁赢');
+  while (guard++ < 30 && !result) {
+    const fromHand = myTurn ? oppHand : myHand;
+    const toHand = myTurn ? myHand : oppHand;
+    const fromAttrs = myTurn ? oppAttrs : myAttrs;
+    const toAttrs = myTurn ? myAttrs : oppAttrs;
+    const fromName = myTurn ? '对手' : '你';
+    const toName = myTurn ? '你' : '对手';
+    if (!fromHand.length) { result = myTurn ? 'me' : 'opp'; break; }
+    const idx = Math.floor(Math.random() * fromHand.length);
+    const attr = fromHand[idx];
+    const fromVal = fromAttrs[attr];
+    const toVal = toAttrs[attr];
+    if (fromVal < toVal) {
+      fromHand.splice(idx, 1);
+      toHand.push(attr);
+      pk.logs.unshift(toName + ' 翻到 ' + fromName + ' 的 ' + pkAttrEmoji(attr) + pkAttrName(attr) + '(' + fromVal + ')，比自己(' + toVal + ')小，吃掉！');
+    } else {
+      pk.logs.unshift(toName + ' 翻到 ' + fromName + ' 的 ' + pkAttrEmoji(attr) + pkAttrName(attr) + '(' + fromVal + ')，不比自己(' + toVal + ')小，还给对方');
+    }
+    if (myHand.length - oppHand.length >= 2) { result = 'me'; break; }
+    if (oppHand.length - myHand.length >= 2) { result = 'opp'; break; }
+    myTurn = !myTurn;
+  }
+  pk.winner = result || 'draw';
+  pk.phase = 'over';
+  renderPk();
+  settlePkResult(pk.winner === 'me' ? 'win' : (pk.winner === 'opp' ? 'lose' : 'draw'));
 }
 
 // ---------- PVP 对战 ----------
@@ -422,6 +472,8 @@ function startPvp(match) {
     roundNum: match.roundNum || 0,
     hand: iAmDealer ? (match.dealerHand || PK_ATTRS.map(a => a.key)) : (match.followerHand || PK_ATTRS.map(a => a.key)),
     stolen: iAmDealer ? (match.dealerStolen || []) : (match.followerStolen || []),
+    stealTurn: match.stealTurn || 'follower',
+    stealLog: '',
     logs: [],
     _uiPhase: '',
     _lastRoundMsg: '',
@@ -445,7 +497,9 @@ async function pkPollPvp() {
     }
     pk._missCount = 0;
     // 当前行动方超时检测：超过 30 秒未动，判其离线落败
-    const turnId = (m.phase === 'dealer_turn' || m.phase === 'dealer_verify') ? m.dealer : m.follower;
+    const turnId = m.phase === 'steal'
+      ? (m.stealTurn === 'dealer' ? m.dealer : m.follower)
+      : ((m.phase === 'dealer_turn' || m.phase === 'dealer_verify') ? m.dealer : m.follower);
     if (m.phase !== 'over' && turnId && Date.now() - (m.updatedAt || m.createdAt) > PK_TURN_TIMEOUT) {
       const winnerId = turnId === m.dealer ? m.follower : m.dealer;
       await withLock(async () => {
@@ -484,6 +538,10 @@ async function pkPollPvp() {
     pk.roundNum = m.roundNum || 0;
     pk.hand = iAmDealer ? (m.dealerHand || PK_ATTRS.map(a => a.key)) : (m.followerHand || PK_ATTRS.map(a => a.key));
     pk.stolen = iAmDealer ? (m.dealerStolen || []) : (m.followerStolen || []);
+    pk.stealTurn = m.stealTurn || 'follower';
+    pk.stealLog = m.stealLog || '';
+    pk.myHandLen = iAmDealer ? (m.dealerHand || []).length : (m.followerHand || []).length;
+    pk.oppHandLen = iAmDealer ? (m.followerHand || []).length : (m.dealerHand || []).length;
     pk.round = m.round ? {
       attr: m.round.attr,
       followerAttr: m.round.followerAttr,
@@ -492,6 +550,10 @@ async function pkPollPvp() {
       myVerify: iAmDealer ? m.round.dealerVerify : m.round.followerVerify,
       oppVerify: iAmDealer ? m.round.followerVerify : m.round.dealerVerify,
     } : (pk.round || { attr: null, followerAttr: null, myReport: null, oppReport: null, myVerify: false, oppVerify: false });
+    if (m.stage === 2 && m.phase === 'steal') {
+      const myRole = iAmDealer ? 'dealer' : 'follower';
+      if (m.stealTurn === myRole) { pkStealStep(); return; }
+    }
     if (m.roundResult && m.roundResult.msg && pk._lastRoundMsg !== m.roundResult.msg + m.updatedAt) {
       pk._lastRoundMsg = m.roundResult.msg + m.updatedAt;
       pk.logs.unshift(m.roundResult.msg);
@@ -503,33 +565,65 @@ async function pkPollPvp() {
       if (m.phase === 'dealer_turn' && iAmDealer) renderDealerUI();
       else if (m.phase === 'follower_turn' && !iAmDealer) renderFollowerUI();
       else if (m.phase === 'dealer_verify' && iAmDealer) renderDealerVerifyUI();
+      else if (m.phase === 'steal') renderStealUI();
       else renderWaitingUI(m.phase);
     }
   } catch (e) {}
 }
 
-// ---------- 第二阶段抽牌 ----------
-function pkSteal(m) {
-  let parts = [];
-  if (m.followerHand && m.followerHand.length) {
-    const idx = Math.floor(Math.random() * m.followerHand.length);
-    const stolen = m.followerHand.splice(idx, 1)[0];
-    if (!m.dealerHand) m.dealerHand = [];
-    m.dealerHand.push(stolen);
-    if (!m.dealerStolen) m.dealerStolen = [];
-    m.dealerStolen.push(stolen);
-    parts.push('庄家「' + m.dealerName + '」抽走后家「' + m.followerName + '」的' + pkAttrEmoji(stolen) + pkAttrName(stolen) + '牌');
-  }
-  if (m.dealerHand && m.dealerHand.length) {
-    const idx = Math.floor(Math.random() * m.dealerHand.length);
-    const stolen = m.dealerHand.splice(idx, 1)[0];
-    if (!m.followerHand) m.followerHand = [];
-    m.followerHand.push(stolen);
-    if (!m.followerStolen) m.followerStolen = [];
-    m.followerStolen.push(stolen);
-    parts.push('后家「' + m.followerName + '」抽走庄家「' + m.dealerName + '」的' + pkAttrEmoji(stolen) + pkAttrName(stolen) + '牌');
-  }
-  return parts.length ? '🎴 ' + parts.join('，') : '';
+// ---------- 第二阶段：抽牌（后家先抽，谁先比对方多 2 张牌赢） ----------
+async function pkStealStep() {
+  if (!pk || pk.mode !== 'pvp') return;
+  await withLock(async () => {
+    const world = await loadWorld();
+    const m = (world.pkMatches || {})[pk.matchId];
+    if (!m || m.phase !== 'steal' || m.stage !== 2) return;
+    const iAmDealer = m.dealer === myId;
+    const myRole = iAmDealer ? 'dealer' : 'follower';
+    if (m.stealTurn !== myRole) return;
+    const isFollowerTurn = m.stealTurn === 'follower';
+    const fromHand = isFollowerTurn ? m.dealerHand : m.followerHand;
+    const toHand = isFollowerTurn ? m.followerHand : m.dealerHand;
+    const fromAttrs = isFollowerTurn ? m.dealerAttrs : m.followerAttrs;
+    const toAttrs = isFollowerTurn ? m.followerAttrs : m.dealerAttrs;
+    const fromName = isFollowerTurn ? m.dealerName : m.followerName;
+    const toName = isFollowerTurn ? m.followerName : m.dealerName;
+    if (!fromHand || !fromHand.length) {
+      m.winner = isFollowerTurn ? m.follower : m.dealer;
+      m.phase = 'over';
+      m.roundResult = { msg: fromName + ' 已无牌可抽，' + toName + ' 获胜！' };
+      m.updatedAt = Date.now();
+      await saveWorld(world);
+      return;
+    }
+    const idx = Math.floor(Math.random() * fromHand.length);
+    const attr = fromHand[idx];
+    const fromVal = fromAttrs[attr];
+    const toVal = toAttrs[attr];
+    if (fromVal < toVal) {
+      fromHand.splice(idx, 1);
+      toHand.push(attr);
+      m.stealLog = toName + ' 翻到 ' + fromName + ' 的 ' + pkAttrEmoji(attr) + pkAttrName(attr) + '(' + fromVal + ')，比自己(' + toVal + ')小，吃掉！';
+    } else {
+      m.stealLog = toName + ' 翻到 ' + fromName + ' 的 ' + pkAttrEmoji(attr) + pkAttrName(attr) + '(' + fromVal + ')，不比自己(' + toVal + ')小，还给对方';
+    }
+    const dLen = (m.dealerHand || []).length;
+    const fLen = (m.followerHand || []).length;
+    if (fLen - dLen >= 2) {
+      m.winner = m.follower;
+      m.phase = 'over';
+      m.roundResult = { msg: m.followerName + ' 比 ' + m.dealerName + ' 多 2 张牌，获胜！' };
+    } else if (dLen - fLen >= 2) {
+      m.winner = m.dealer;
+      m.phase = 'over';
+      m.roundResult = { msg: m.dealerName + ' 比 ' + m.followerName + ' 多 2 张牌，获胜！' };
+    } else {
+      m.stealTurn = isFollowerTurn ? 'dealer' : 'follower';
+    }
+    m.updatedAt = Date.now();
+    await saveWorld(world);
+  });
+  pkPollPvp();
 }
 
 function resolvePvp(m) {
@@ -558,44 +652,19 @@ function resolvePvp(m) {
     if (pointTo === 'dealer') m.dealerScore++;
     else if (pointTo === 'follower') m.followerScore++;
     m.roundNum = (m.roundNum || 0) + 1;
-    let over = false;
-    if ((m.stage || 1) === 1) {
-      if (m.dealerScore >= PK_WIN_SCORE || m.followerScore >= PK_WIN_SCORE) {
-        m.winner = m.dealerScore >= PK_WIN_SCORE ? m.dealer : m.follower;
-        m.phase = 'over';
-        over = true;
-      } else if (m.roundNum >= 3) {
-        m.stage = 2;
-      }
+    if (m.dealerScore >= PK_WIN_SCORE || m.followerScore >= PK_WIN_SCORE) {
+      m.winner = m.dealerScore >= PK_WIN_SCORE ? m.dealer : m.follower;
+      m.phase = 'over';
+    } else if (m.roundNum >= 3) {
+      // 3 局未分胜负，进入抽牌阶段：后家先抽，谁先比对方多 2 张牌谁赢
+      m.stage = 2;
+      m.phase = 'steal';
+      m.stealTurn = 'follower';
+      m.stealLog = '';
+      m.round = null;
     } else {
-      if (m.roundNum >= 6) {
-        if (m.dealerScore > m.followerScore) m.winner = m.dealer;
-        else if (m.followerScore > m.dealerScore) m.winner = m.follower;
-        else m.winner = null;
-        m.phase = 'over';
-        over = true;
-        msg = (m.winner == null)
-          ? '第二阶段 3 局结束，双方平分，平局！'
-          : '第二阶段 3 局结束，总比分 ' + m.dealerScore + ':' + m.followerScore + '，' + (m.winner === m.dealer ? m.dealerName : m.followerName) + ' 胜！';
-      }
-    }
-    if (!over) {
-      // 轮换庄家/后家
-      const oDealer = m.dealer, oDealerAttrs = m.dealerAttrs, oDealerScore = m.dealerScore, oDealerName = m.dealerName, oDealerV = m.dealerVerifyLeft;
-      const oDealerHand = m.dealerHand, oDealerStolen = m.dealerStolen;
-      m.dealer = m.follower; m.follower = oDealer;
-      m.dealerAttrs = m.followerAttrs; m.followerAttrs = oDealerAttrs;
-      m.dealerScore = m.followerScore; m.followerScore = oDealerScore;
-      m.dealerName = m.followerName; m.followerName = oDealerName;
-      m.dealerVerifyLeft = m.followerVerifyLeft; m.followerVerifyLeft = oDealerV;
-      m.dealerHand = m.followerHand; m.followerHand = oDealerHand;
-      m.dealerStolen = m.followerStolen; m.followerStolen = oDealerStolen;
       m.round = null;
       m.phase = 'dealer_turn';
-      if (m.stage === 2 && m.roundNum === 3) {
-        const stealMsg = pkSteal(m);
-        if (stealMsg) msg += ' ' + stealMsg;
-      }
     }
   }
   m.roundResult = { msg };
@@ -714,17 +783,19 @@ function renderPk() {
   $('pkOppTag').textContent = pk.iAmDealer ? '后家' : '庄家';
   $('pkMyTag').className = 'pk-score-tag ' + (pk.iAmDealer ? 'dealer' : 'follower');
   $('pkOppTag').className = 'pk-score-tag ' + (pk.iAmDealer ? 'follower' : 'dealer');
-  if (pk.round && pk.round.attr) {
+  if (pk.phase === 'steal') {
+    const turnName = pk.stealTurn === 'follower' ? '后家' : '庄家';
+    $('pkAttrRow').textContent = '抽牌阶段 · 你 ' + (pk.myHandLen || 0) + ' 张 vs 对手 ' + (pk.oppHandLen || 0) + ' 张 · 当前' + turnName + '抽';
+  } else if (pk.round && pk.round.attr) {
     $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · 属性：' + pkAttrEmoji(pk.round.attr) + ' ' + pkAttrName(pk.round.attr);
   } else {
-    const stageTxt = pk.stage === 2 ? '第二阶段（再比3局，大者胜）' : '第一阶段（先得3分胜）';
-    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · ' + (pk.iAmDealer ? '轮到你选属性…' : '等待庄家选属性…') + ' · ' + stageTxt;
+    $('pkAttrRow').textContent = '第' + (pk.roundNum + 1) + '局 · ' + (pk.iAmDealer ? '轮到你选属性…' : '等待庄家选属性…') + ' · 第一阶段（先得2分胜）';
   }
   $('pkOppReport').textContent = (pk.round && pk.round.oppReport != null) ? pk.round.oppReport : '—';
   $('pkMyReport').textContent = (pk.round && pk.round.myReport != null) ? pk.round.myReport : '—';
   let lh = '';
   for (const l of (pk.logs || []).slice(0, 8)) lh += '<div class="pk-log-item">' + esc(l) + '</div>';
-  $('pkLog').innerHTML = lh || '<div class="pk-log-item">PK 开始，先得 3 分者胜！赢 +10 魅力，输 -10 魅力</div>';
+  $('pkLog').innerHTML = lh || '<div class="pk-log-item">PK 开始，先得 2 分者胜！赢 +10 魅力，输 -10 魅力</div>';
   if (pk.phase === 'over') {
     const won = pk.winner === 'me';
     const draw = pk.winner === 'draw';
@@ -896,6 +967,14 @@ function renderWaitingUI(phase) {
   else if (phase === 'dealer_verify') txt = '等待庄家决定…';
   else if (phase === 'dealer_turn') txt = '等待庄家出牌…';
   $('pkActions').innerHTML = '<div class="pk-hint">⏳ ' + txt + '</div>';
+}
+
+function renderStealUI() {
+  const turnName = pk.stealTurn === 'follower' ? '后家' : '庄家';
+  const myRole = pk.iAmDealer ? '庄家' : '后家';
+  $('pkActions').innerHTML =
+    '<div class="pk-hint">🃏 ' + (pk.stealLog || ('当前' + turnName + '抽牌中…')) + '</div>' +
+    '<div class="pk-hint">你是' + myRole + '，手牌 ' + (pk.myHandLen || 0) + ' 张 vs 对手 ' + (pk.oppHandLen || 0) + ' 张（谁先多 2 张谁赢）</div>';
 }
 
 // ---------- 关闭 / 退出 ----------
