@@ -410,6 +410,7 @@ function applyAiResult(gameWinner, pointWinner) {
     aiStealPhase();
     return;
   }
+  pk.iAmDealer = !pk.iAmDealer;
   nextRound();
 }
 
@@ -618,12 +619,25 @@ async function pkStealStep() {
       m.phase = 'over';
       m.roundResult = { msg: m.dealerName + ' 比 ' + m.followerName + ' 多 2 张牌，获胜！' };
     } else {
-      m.stealTurn = isFollowerTurn ? 'dealer' : 'follower';
+      swapDealerFollower(m);
+      m.stealTurn = 'follower';
     }
     m.updatedAt = Date.now();
     await saveWorld(world);
   });
   pkPollPvp();
+}
+
+function swapDealerFollower(m) {
+  const oDealer = m.dealer, oDealerAttrs = m.dealerAttrs, oDealerScore = m.dealerScore, oDealerName = m.dealerName, oDealerV = m.dealerVerifyLeft;
+  const oDealerHand = m.dealerHand, oDealerStolen = m.dealerStolen;
+  m.dealer = m.follower; m.follower = oDealer;
+  m.dealerAttrs = m.followerAttrs; m.followerAttrs = oDealerAttrs;
+  m.dealerScore = m.followerScore; m.followerScore = oDealerScore;
+  m.dealerName = m.followerName; m.followerName = oDealerName;
+  m.dealerVerifyLeft = m.followerVerifyLeft; m.followerVerifyLeft = oDealerV;
+  m.dealerHand = m.followerHand; m.followerHand = oDealerHand;
+  m.dealerStolen = m.followerStolen; m.followerStolen = oDealerStolen;
 }
 
 function resolvePvp(m) {
@@ -663,6 +677,7 @@ function resolvePvp(m) {
       m.stealLog = '';
       m.round = null;
     } else {
+      swapDealerFollower(m);
       m.round = null;
       m.phase = 'dealer_turn';
     }
