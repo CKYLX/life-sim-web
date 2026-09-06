@@ -16,7 +16,7 @@ const PK_MATCH_WAIT = 60000;  // 匹配真人等待时长（毫秒）
 const PK_POLL = 1600;        // pvp 轮询间隔（毫秒）
 const PK_COST = 10;         // 入场费金币
 const PK_ENERGY = 15;        // 精力消耗
-const PK_TURN_TIMEOUT = 30000; // 对局中该行动方超过 30 秒未动判离线落败
+const PK_TURN_TIMEOUT = 40000; // 对局中该行动方超过 40 秒未动判离线落败
 
 let pk = null;               // 当前对局对象
 let pkMe = null;             // PK 开始时的我方快照 { name, attrs }
@@ -507,9 +507,12 @@ async function pkPollPvp() {
         const w2 = await loadWorld();
         const m2 = (w2.pkMatches || {})[pk.matchId];
         if (m2 && m2.phase !== 'over') {
+          const loserId = winnerId === m2.dealer ? m2.follower : m2.dealer;
+          const loserName = loserId === m2.dealer ? m2.dealerName : m2.followerName;
+          const winnerName = winnerId === m2.dealer ? m2.dealerName : m2.followerName;
           m2.phase = 'over';
           m2.winner = winnerId;
-          m2.roundResult = { msg: '对方超时未操作，判定离线' };
+          m2.roundResult = { msg: loserName + ' 超时未操作，' + winnerName + ' 获胜' };
           m2.updatedAt = Date.now();
           await saveWorld(w2);
         }
