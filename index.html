@@ -687,11 +687,19 @@ async function loadWorld() {
         return normalizeWorld(rows[0].world);
       }
     }
-  } catch (e) { console.error('[存档] 加载失败', e); }
-  return emptyWorld();
+    return emptyWorld();
+  } catch (e) {
+    console.error('[存档] 加载失败', e);
+    // 网络失败：返回带标记的空 world，禁止后续 saveWorld 覆盖云端数据
+    return { ...emptyWorld(), __loadFailed: true };
+  }
 }
 
 async function saveWorld(world) {
+  if (world && world.__loadFailed) {
+    console.warn('[saveWorld] load failed, skip save to avoid overwriting cloud data');
+    return;
+  }
   try {
     await fetch(SB_URL + '/rest/v1/game_state?id=eq.1', {
       method: 'PATCH',
@@ -1456,6 +1464,11 @@ async function bootstrap() {
   if (myId) {
     try {
       const world = await loadWorld();
+      if (world.__loadFailed) {
+        // 网络加载失败：保留本地角色，直接进入（数据稍后由轮询刷新）
+        enterGame();
+        return;
+      }
       if (!getPlayer(world, myId)) {
         // 角色已不存在，清除失效的存档 id，回到登录/自动登录
         myId = null;
