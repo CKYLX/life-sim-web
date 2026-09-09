@@ -509,6 +509,19 @@ async function pkPollPvp() {
       return;
     }
     pk._missCount = 0;
+    // 死对局检测：庄家或后家为空（对手数据丢失），直接清理并判平局，避免卡死
+    if (!m.dealer || !m.follower) {
+      await withLock(async () => {
+        const w2 = await loadWorld();
+        if (w2.pkMatches && w2.pkMatches[pk.matchId]) { delete w2.pkMatches[pk.matchId]; await saveWorld(w2); }
+      });
+      pk.phase = 'over';
+      pk.winner = 'draw';
+      clearPkTimers();
+      renderPk();
+      settlePkResult('draw');
+      return;
+    }
     // 当前行动方超时检测：超过 30 秒未动，判其离线落败
     const turnId = m.phase === 'steal'
       ? (m.stealTurn === 'dealer' ? m.dealer : m.follower)
