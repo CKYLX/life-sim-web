@@ -107,6 +107,16 @@ function pkQueueJoin(world, id) {
   world.pkQueue = (world.pkQueue || []).filter((e) => e && typeof e === 'object' && e.at && (now - e.at) < PK_MATCH_WAIT);
   if (!world.pkQueue.some((e) => e && e.id === id)) world.pkQueue.push({ id: id, at: now });
 }
+// 清理"死对局"：庄家或后家为 null、或对应玩家已不存在的残留对局（防止卡死/幽灵匹配）
+function cleanDeadMatches(world) {
+  if (!world.pkMatches) return;
+  for (const id of Object.keys(world.pkMatches)) {
+    const m = world.pkMatches[id];
+    if (!m.dealer || !m.follower || !getPlayer(world, m.dealer) || !getPlayer(world, m.follower)) {
+      delete world.pkMatches[id];
+    }
+  }
+}
 
 function cancelPkMatch() {
   pkCancelFlag = true;
@@ -131,6 +141,7 @@ function tryMatchPvp() {
         await withLock(async () => {
           const w = await loadWorld();
           if (!Array.isArray(w.pkQueue)) w.pkQueue = [];
+          cleanDeadMatches(w);
           pkQueueJoin(w, myId);
           await saveWorld(w);
         });
@@ -182,6 +193,7 @@ function tryMatchPvp() {
 }
 
 function createPvpMatch(w, a, b) {
+  if (!a || !b) return null;
   const pa = getPlayer(w, a);
   const pb = getPlayer(w, b);
   const dealerIsA = Math.random() < 0.5;
